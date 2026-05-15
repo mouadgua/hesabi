@@ -1,0 +1,175 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// --- 1. L'ÉQUIPE ---
+model Utilisateur {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cabinet_id      String?  @db.Uuid
+  email           String   @unique
+  nom             String
+  role            RoleUser @default(COLLABORATEUR)
+  actif           Boolean  @default(true)
+  onboarding_done Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  cabinet         Cabinet? @relation(fields: [cabinet_id], references: [id], onDelete: Cascade)
+}
+
+model Cabinet {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nom                 String
+  logo_url            String?  
+  plan_abonnement     String   @default("PRO")
+  createdAt           DateTime @default(now())
+  
+  // 💡 GESTION DES CRÉDITS (L'essai gratuit)
+  credits             Int      @default(15)
+  
+  // 💰 SYSTÈME DE PAIEMENT (Prêt pour l'intégration future)
+  stripe_customer_id     String?  @unique
+  stripe_subscription_id String?  @unique
+  plan_status            String   @default("TRIAL") // Options: TRIAL, ACTIVE, CANCELED
+
+  ice                 String?       
+  identifiant_fiscal  String?       
+  registre_commerce   String?       
+  patente             String?       
+  adresse             String?
+  ville               String?
+  code_postal         String?
+  telephone           String?
+  site_web            String?
+  
+  utilisateurs        Utilisateur[]
+  clients             Client[]
+  templates           TemplateExtraction[]
+}
+
+
+// --- 2. LES CLIENTS ---
+model Client {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cabinet_id         String   @db.Uuid
+  nom_entreprise     String
+  
+  // Les informations de recoupement (Master Data)
+  ice                String?  @db.VarChar(15)
+  identifiant_fiscal String?
+  registre_commerce  String?
+  rib                String?  @db.VarChar(24) 
+  adresse            String?
+  ville              String?
+  
+  statut             StatutClient @default(ACTIF)
+  createdAt          DateTime @default(now())
+  
+  cabinet            Cabinet    @relation(fields: [cabinet_id], references: [id], onDelete: Cascade)
+  documents          Document[]
+  dossiers           Dossier[]  // <--- LA LIGNE MANQUANTE EST ICI !
+}
+
+// --- 3. MODÈLES D'EXTRACTION (PRESETS) ---
+model TemplateExtraction {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cabinet_id      String   @db.Uuid
+  nom_modele      String   // Ex: "Facture Standard", "Relevé CIH", "Notes de frais"
+  structure_json  Json     // La structure des colonnes attendues
+  createdAt       DateTime @default(now())
+
+  cabinet         Cabinet    @relation(fields: [cabinet_id], references: [id], onDelete: Cascade)
+  documents       Document[] 
+}
+
+model Dossier {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nom        String
+  client_id  String   @db.Uuid
+  parent_id  String?  @db.Uuid // Pour faire des sous-dossiers si besoin
+  createdAt  DateTime @default(now())
+
+  client     Client   @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  documents  Document[]
+}
+
+// --- 4. LE FILE MANAGER (DOCUMENTS) ---
+model Document {
+  id                          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  client_id                   String         @db.Uuid
+  template_id                 String?        @db.Uuid
+  nom_fichier                 String?
+  chemin_storage              String         @db.Text
+  statut                      DocumentStatut @default(A_EXTRAIRE)
+  donnees_extraites           Json?
+  // Classification Gemini
+  document_type               String?        // facture | releve_bancaire | bon_commande | recu | autre
+  document_type_confidence    Float?         // 0.0 – 1.0
+  fournisseur_detecte         String?
+  error_message               String?        @db.Text
+  createdAt                   DateTime       @default(now())
+  updatedAt                   DateTime       @updatedAt
+
+  client             Client              @relation(fields: [client_id], references: [id], onDelete: Cascade)
+  template           TemplateExtraction? @relation(fields: [template_id], references: [id])
+  dossier_id         String?  @db.Uuid
+  dossier            Dossier? @relation(fields: [dossier_id], references: [id])
+}
+
+// --- 5. LEARNING LOOP ---
+model FieldCorrection {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id         String   @db.Uuid
+  document_type   String
+  field_name      String
+  original_value  String?  @db.Text
+  corrected_value String   @db.Text
+  supplier_name   String?
+  createdAt       DateTime @default(now())
+}
+
+model UserFieldPreference {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id          String   @db.Uuid
+  document_type    String
+  preferred_fields Json?
+  excluded_fields  Json?
+  field_aliases    Json?
+  updatedAt        DateTime @updatedAt
+
+  @@unique([user_id, document_type])
+}
+
+// --- 6. MISSING FIELD FEEDBACK ---
+model MissingFieldRequest {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id       String   @db.Uuid
+  document_type String
+  field_name    String
+  document_id   String?  @db.Uuid
+  createdAt     DateTime @default(now())
+}
+
+// --- ÉNUMÉRATIONS ---
+enum DocumentStatut {
+  A_EXTRAIRE      // Fichier dans le dossier, prêt à être sélectionné
+  EN_COURS_IA     // L'IA est en train de traiter
+  A_VERIFIER      // L'IA a fini, attente de validation humaine
+  VALIDE          // Validé par le comptable
+  REJETE
+}
+
+enum StatutClient {
+  ACTIF
+  ARCHIVE
+}
+
+enum RoleUser {
+  EXPERT_COMPTABLE
+  COLLABORATEUR
+}

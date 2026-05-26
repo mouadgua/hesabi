@@ -47,7 +47,7 @@ export default function MissingFieldFeedback({ documentId, documentType }) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-indigo-600 transition-colors mt-1">
+        <button className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-600 hover:text-[#1D9E75] dark:hover:text-[#1D9E75] transition-colors mt-1">
           <PlusCircleIcon className="w-3.5 h-3.5" />
           Ce champ manque ?
         </button>
@@ -84,7 +84,7 @@ export default function MissingFieldFeedback({ documentId, documentType }) {
             />
           </div>
 
-          <Button type="submit" size="sm" className="w-full h-8 text-xs bg-indigo-600 hover:bg-indigo-700 text-white" disabled={loading || !fieldName.trim()}>
+          <Button type="submit" size="sm" className="w-full h-8 text-xs bg-[#1D9E75] hover:bg-[#0F6E56] text-white" disabled={loading || !fieldName.trim()}>
             {loading ? "Envoi…" : "Signaler"}
           </Button>
         </form>

@@ -1,304 +1,261 @@
 "use client"
 
-import { useState, useTransition, useEffect } from 'react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { toast } from 'sonner'
-import { createClientAction } from './actions'
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Skeleton } from "@/components/ui/skeleton"
+import Link from "next/link"
+import { motion } from "framer-motion"
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle
-} from "@/components/ui/dialog"
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-  DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel,
-  AlertDialogContent, AlertDialogDescription,
-  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import {
-  UsersIcon, FileTextIcon, CheckSquareIcon, BoxesIcon,
-  MoreVerticalIcon, FolderOpenIcon, TrashIcon, PlusIcon,
-  Loader2Icon, BuildingIcon
+  ScanIcon, CheckCircle2Icon, ClockIcon, LayoutGridIcon,
+  UploadIcon, ChevronRightIcon, FileTextIcon, ImageIcon, FileIcon,
+  ArrowRightIcon, SparklesIcon, CalendarIcon
 } from "lucide-react"
+import { StatusBadge } from "@/components/status-badge"
+import { Button } from "@/components/ui/button"
 
-// ─── Skeleton row ────────────────────────────────────────────────────────────
+// ─── Animation Variants ───────────────────────────────────────────────────────
+const containerVar = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1, transition: { staggerChildren: 0.08 } }
+}
+const itemVar = {
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.16, 1, 0.3, 1] } }
+}
 
-function SkeletonRow() {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function timeAgo(iso) {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return "à l'instant"
+  if (mins < 60) return `${mins} min`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h`
+  return `${Math.floor(hrs / 24)}j`
+}
+
+function formatDate() {
+  return new Date().toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  })
+}
+
+function FileTypeIcon({ name }) {
+  const ext = (name || "").split(".").pop().toLowerCase()
+  if (ext === "pdf") return <FileTextIcon className="size-5 text-[#1D9E75]" />
+  if (["jpg", "jpeg", "png", "webp"].includes(ext))
+    return <ImageIcon className="size-5 text-teal-500 dark:text-teal-400" />
+  return <FileIcon className="size-5 text-slate-400 dark:text-slate-500" />
+}
+
+// ─── MetricCard ───────────────────────────────────────────────────────────────
+function MetricCard({ icon: Icon, iconBg, iconColor, label, value }) {
   return (
-    <tr className="border-b border-gray-100">
-      <td className="px-6 py-4"><Skeleton className="h-4 w-40" /></td>
-      <td className="px-6 py-4"><Skeleton className="h-4 w-24" /></td>
-      <td className="px-6 py-4"><Skeleton className="h-5 w-20 rounded-full" /></td>
-      <td className="px-6 py-4 text-right"><Skeleton className="h-8 w-8 rounded-md ml-auto" /></td>
-    </tr>
+    <motion.div
+      variants={itemVar}
+      whileHover={{ y: -6, transition: { duration: 0.2 } }}
+      className="relative overflow-hidden rounded-2xl border border-slate-100 dark:border-white/[0.07] bg-white dark:bg-white/[0.04] p-6 backdrop-blur-xl shadow-sm cursor-default hover:shadow-md transition-shadow"
+    >
+      {/* Decorative orb */}
+      <div className={`absolute -right-4 -top-4 size-24 rounded-full blur-2xl opacity-30 dark:opacity-20 ${iconBg}`} />
+
+      <div className="flex items-center justify-between">
+        <div className={`flex size-10 items-center justify-center rounded-xl border border-black/[0.06] dark:border-white/10 ${iconBg} ${iconColor}`}>
+          <Icon className="size-5" />
+        </div>
+        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">
+          {label}
+        </p>
+      </div>
+
+      <div className="mt-5">
+        <p className="text-4xl font-black tracking-tight text-slate-900 dark:text-white">
+          {value}
+        </p>
+      </div>
+    </motion.div>
   )
 }
 
-// ─── Empty state ─────────────────────────────────────────────────────────────
-
-function EmptyClients({ onAdd }) {
-  return (
-    <tr>
-      <td colSpan={4}>
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <svg width="100" height="100" viewBox="0 0 100 100" fill="none" className="mb-5 opacity-40">
-            <circle cx="50" cy="38" r="22" fill="#e0e7ff" />
-            <circle cx="50" cy="38" r="14" fill="#c7d2fe" />
-            <circle cx="50" cy="38" r="8" fill="white" />
-            <ellipse cx="50" cy="78" rx="32" ry="12" fill="#e0e7ff" />
-            <ellipse cx="50" cy="78" rx="22" ry="8" fill="#c7d2fe" />
-            <path d="M30 78 C 30 66 70 66 70 78" fill="white" />
-          </svg>
-          <h3 className="text-lg font-bold text-gray-700 mb-2">Aucun client pour l'instant</h3>
-          <p className="text-sm text-gray-400 mb-5 max-w-xs">
-            Ajoutez votre premier client pour commencer à gérer vos extractions documentaires.
-          </p>
-          <Button
-            className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2"
-            onClick={onAdd}
-          >
-            <PlusIcon className="w-4 h-4" /> Ajouter votre premier client
-          </Button>
-        </div>
-      </td>
-    </tr>
-  )
-}
-
-// ─── Main ────────────────────────────────────────────────────────────────────
-
-export default function DashboardHome({ stats, clients }) {
-  const router = useRouter()
-  const [isPending, startTransition] = useTransition()
-
-  const [newClientOpen, setNewClientOpen] = useState(false)
-  const [isCreating, setIsCreating] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState(null)
-  const [isDeleting, setIsDeleting] = useState(false)
-
-  // Keyboard shortcut Ctrl+N → open new client dialog
-  useEffect(() => {
-    const handler = () => setNewClientOpen(true)
-    document.addEventListener('app:new-client', handler)
-    return () => document.removeEventListener('app:new-client', handler)
-  }, [])
-
-  const handleCreateClient = async (e) => {
-    e.preventDefault()
-    const fd = new FormData(e.currentTarget)
-    setIsCreating(true)
-    const id = toast.loading('Création du client…')
-    try {
-      await createClientAction(fd)
-      toast.success('Client créé avec succès !', { id })
-      setNewClientOpen(false)
-      e.currentTarget?.reset()
-      startTransition(() => router.refresh())
-    } catch (err) {
-      toast.error(err.message || 'Erreur lors de la création', { id })
-    } finally {
-      setIsCreating(false)
-    }
-  }
-
-  const { totalClients, totalModeles, documentsAVerifier, documentsExtraits } = stats
+// ─── Main ─────────────────────────────────────────────────────────────────────
+export default function DashboardHome({ firstName, stats, recentDocs }) {
+  const { totalDocs, validatedDocs, pendingDocs, totalModeles } = stats
 
   return (
-    <div className="p-6 md:p-8 space-y-8 bg-gray-50/50 min-h-[calc(100vh-80px)]">
+    <motion.div
+      initial="hidden"
+      animate="visible"
+      variants={containerVar}
+      className="p-6 md:p-10 space-y-10"
+    >
 
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Vue d'ensemble</h1>
-          <p className="text-gray-500 mt-1">Gérez vos clients et vos flux d'extraction automatisés.</p>
-        </div>
-        <Button
-          className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-md gap-2"
-          onClick={() => setNewClientOpen(true)}
-        >
-          <PlusIcon className="w-4 h-4" /> Nouveau Client
-          <kbd className="ml-1 text-[10px] text-indigo-300 bg-indigo-700/50 border border-indigo-500/50 rounded px-1">⌘N</kbd>
-        </Button>
-      </div>
-
-      {/* KPI cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-        {[
-          { label: 'Clients Actifs', value: totalClients, icon: UsersIcon, color: 'text-indigo-600' },
-          { label: 'À Vérifier (Inbox)', value: documentsAVerifier, icon: CheckSquareIcon, color: 'text-orange-500', sub: 'Extractions terminées', subColor: 'text-orange-600' },
-          { label: 'Documents Validés', value: documentsExtraits, icon: FileTextIcon, color: 'text-green-500', sub: 'Prêts à exporter', subColor: 'text-gray-400' },
-          { label: "Modèles d'Extraction", value: totalModeles, icon: BoxesIcon, color: 'text-purple-500', sub: 'Presets configurés', subColor: 'text-gray-400' },
-        ].map(({ label, value, icon: Icon, color, sub, subColor }) => (
-          <Card key={label} className="border-none shadow-sm bg-white">
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-gray-500">{label}</CardTitle>
-              <Icon className={`w-4 h-4 ${color}`} />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-gray-900">{value}</div>
-              {sub && <p className={`text-xs mt-1 font-medium ${subColor}`}>{sub}</p>}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Client list */}
-      <Card className="border-none shadow-sm bg-white">
-        <CardHeader className="border-b border-gray-100 pb-4">
-          <CardTitle className="text-lg">Portefeuille Clients</CardTitle>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-gray-50/50 text-gray-500">
-                <tr>
-                  <th className="px-6 py-4 font-medium">Nom de l'entreprise</th>
-                  <th className="px-6 py-4 font-medium">ICE</th>
-                  <th className="px-6 py-4 font-medium">Documents à vérifier</th>
-                  <th className="px-6 py-4 font-medium text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {isPending ? (
-                  Array.from({ length: 3 }).map((_, i) => <SkeletonRow key={i} />)
-                ) : clients.length === 0 ? (
-                  <EmptyClients onAdd={() => setNewClientOpen(true)} />
-                ) : (
-                  clients.map(client => (
-                    <tr key={client.id} className="hover:bg-gray-50/50 transition-colors group">
-                      <td className="px-6 py-4 font-semibold text-gray-900">{client.nom_entreprise}</td>
-                      <td className="px-6 py-4 text-gray-500">{client.ice || 'Non renseigné'}</td>
-                      <td className="px-6 py-4">
-                        {client.pendingDocs > 0 ? (
-                          <Badge className="bg-orange-100 text-orange-700 border-orange-200">
-                            {client.pendingDocs} en attente
-                          </Badge>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-transparent text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none">
-                            <MoreVerticalIcon className="h-4 w-4" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-48">
-                            <DropdownMenuLabel>Gestion du client</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <Link href={`/dashboard/clients/${client.id}`}>
-                              <DropdownMenuItem className="cursor-pointer font-medium text-indigo-600">
-                                <FolderOpenIcon className="w-4 h-4 mr-2" /> Voir l'espace
-                              </DropdownMenuItem>
-                            </Link>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              className="cursor-pointer text-red-600 focus:text-red-700 focus:bg-red-50"
-                              onClick={() => setDeleteTarget(client)}
-                            >
-                              <TrashIcon className="w-4 h-4 mr-2" /> Supprimer
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+      {/* ── Section 1 — Greeting ────────────────────────────────────────── */}
+      <motion.div variants={itemVar} className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div className="space-y-2">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#1D9E75]/10 dark:bg-[#1D9E75]/10 border border-[#1D9E75]/20 backdrop-blur-md text-[#1D9E75] text-xs font-semibold shadow-sm">
+            <SparklesIcon className="size-3" />
+            Dashboard IA
           </div>
-        </CardContent>
-      </Card>
+          <h2 className="text-4xl font-black tracking-tight text-slate-900 dark:text-white">
+            Ravi de vous revoir,{" "}
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1D9E75] via-emerald-400 to-teal-300">
+              {firstName}
+            </span>
+          </h2>
+          <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400 font-medium flex-wrap">
+            <CalendarIcon className="size-4 shrink-0" />
+            <p className="text-sm capitalize">{formatDate()}</p>
+            {pendingDocs > 0 && (
+              <div className="flex items-center gap-2 pl-3 border-l border-slate-200/60 dark:border-white/10">
+                <div className="size-2 rounded-full bg-amber-400 animate-pulse" />
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  {pendingDocs} action{pendingDocs > 1 ? "s" : ""} requise{pendingDocs > 1 ? "s" : ""}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
 
-      {/* New client dialog */}
-      <Dialog open={newClientOpen} onOpenChange={setNewClientOpen}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <BuildingIcon className="w-5 h-5 text-indigo-600" /> Ajouter un nouveau client
-            </DialogTitle>
-            <DialogDescription>
-              Renseignez les données maîtresses du client. L'IA les utilisera pour vérifier la conformité des futures factures.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleCreateClient} className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label htmlFor="nom_entreprise">Nom de l'entreprise *</Label>
-              <Input id="nom_entreprise" name="nom_entreprise" placeholder="Ex: Acme Corp" required autoFocus />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="ice">ICE</Label>
-                <Input id="ice" name="ice" placeholder="15 chiffres" maxLength={15} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="identifiant_fiscal">Identifiant Fiscal (IF)</Label>
-                <Input id="identifiant_fiscal" name="identifiant_fiscal" placeholder="Ex: 12345678" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="registre_commerce">Registre de Commerce (RC)</Label>
-                <Input id="registre_commerce" name="registre_commerce" placeholder="Ex: 45678" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="rib">RIB Principal</Label>
-                <Input id="rib" name="rib" placeholder="24 chiffres" maxLength={24} />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="col-span-2 space-y-2">
-                <Label htmlFor="adresse">Adresse de facturation</Label>
-                <Input id="adresse" name="adresse" placeholder="123 rue de la paix…" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ville">Ville</Label>
-                <Input id="ville" name="ville" placeholder="Ex: Rabat" />
-              </div>
-            </div>
-            <Button
-              type="submit"
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white mt-2"
-              disabled={isCreating}
-            >
-              {isCreating
-                ? <><Loader2Icon className="w-4 h-4 mr-2 animate-spin" /> Création en cours…</>
-                : 'Enregistrer le client'}
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
+        <Link href="/dashboard/extraction">
+          <Button
+            size="lg"
+            className="rounded-xl px-6 font-bold shadow-lg shadow-[#1D9E75]/20 transition-all hover:scale-105"
+          >
+            <UploadIcon className="mr-2 size-5" />
+            Nouvelle extraction
+          </Button>
+        </Link>
+      </motion.div>
 
-      {/* Delete confirmation */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Supprimer ce client ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Vous êtes sur le point de supprimer <strong>{deleteTarget?.nom_entreprise}</strong> ainsi que tous ses documents.
-              Cette action est irréversible.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              className="bg-red-600 hover:bg-red-700 text-white"
-              onClick={() => {
-                toast.info('Suppression de client à implémenter.')
-                setDeleteTarget(null)
-              }}
+      {/* ── Section 2 — Metrics ─────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard
+          icon={ScanIcon}
+          iconBg="bg-[#1D9E75]/10 dark:bg-[#1D9E75]/10"
+          iconColor="text-[#1D9E75]"
+          label="Documents"
+          value={totalDocs}
+        />
+        <MetricCard
+          icon={CheckCircle2Icon}
+          iconBg="bg-emerald-100 dark:bg-emerald-500/10"
+          iconColor="text-emerald-600 dark:text-emerald-400"
+          label="Validés"
+          value={validatedDocs}
+        />
+        <MetricCard
+          icon={ClockIcon}
+          iconBg="bg-amber-100 dark:bg-amber-500/10"
+          iconColor="text-amber-600 dark:text-amber-400"
+          label="En attente"
+          value={pendingDocs}
+        />
+        <MetricCard
+          icon={LayoutGridIcon}
+          iconBg="bg-teal-100 dark:bg-teal-500/10"
+          iconColor="text-teal-600 dark:text-teal-400"
+          label="Modèles"
+          value={totalModeles}
+        />
+      </div>
+
+      {/* ── Section 3+4 — Activity + Shortcuts ─────────────────────────── */}
+      <div className="grid lg:grid-cols-3 gap-6">
+
+        {/* Recent activity */}
+        <motion.div
+          variants={itemVar}
+          className="lg:col-span-2 rounded-[1.75rem] border border-slate-100 dark:border-white/[0.07] bg-white dark:bg-white/[0.04] backdrop-blur-xl overflow-hidden shadow-sm"
+        >
+          <div className="flex items-center justify-between border-b border-slate-100/80 dark:border-white/[0.06] px-8 py-5">
+            <h3 className="text-base font-bold text-slate-800 dark:text-white tracking-tight">
+              Extractions récentes
+            </h3>
+            <Link
+              href="/dashboard/verification"
+              className="text-[10px] font-bold text-slate-400 dark:text-slate-500 hover:text-[#1D9E75] dark:hover:text-[#1D9E75] transition-colors uppercase tracking-widest"
             >
-              Supprimer
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+              Voir tout
+            </Link>
+          </div>
+
+          {recentDocs.length === 0 ? (
+            <div className="py-20 text-center space-y-4">
+              <div className="mx-auto size-16 rounded-2xl bg-slate-100 dark:bg-white/[0.05] flex items-center justify-center border border-slate-200/60 dark:border-white/[0.07]">
+                <FileIcon className="size-8 text-slate-300 dark:text-slate-600" />
+              </div>
+              <p className="text-slate-400 dark:text-slate-500 font-medium text-sm">
+                Aucun document traité
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100/80 dark:divide-white/[0.04]">
+              {recentDocs.map((doc) => (
+                <Link
+                  key={doc.id}
+                  href={`/dashboard/verification/${doc.id}`}
+                  className="flex items-center gap-5 px-8 py-4 hover:bg-slate-50/70 dark:hover:bg-white/[0.02] transition-all group cursor-pointer"
+                >
+                  <div className="size-11 rounded-xl bg-slate-100 dark:bg-white/[0.05] border border-slate-200/60 dark:border-white/[0.07] flex items-center justify-center group-hover:scale-110 transition-transform shrink-0">
+                    <FileTypeIcon name={doc.nom_fichier} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-slate-700 dark:text-slate-200 group-hover:text-[#1D9E75] dark:group-hover:text-[#1D9E75] transition-colors">
+                      {doc.nom_fichier || doc.document_type || "Sans titre"}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
+                    <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-600 uppercase tracking-wide">
+                      {timeAgo(doc.createdAt)}
+                    </span>
+                    <StatusBadge status={doc.statut} />
+                  </div>
+                  <ChevronRightIcon className="size-4 text-slate-300 dark:text-slate-700 group-hover:translate-x-1 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-all shrink-0" />
+                </Link>
+              ))}
+            </div>
+          )}
+        </motion.div>
+
+        {/* Shortcuts */}
+        <motion.div variants={itemVar} className="space-y-4">
+          <p className="text-[10px] font-bold text-slate-400 dark:text-slate-600 uppercase tracking-widest px-1">
+            Raccourcis rapides
+          </p>
+
+          <Link
+            href="/dashboard/extraction"
+            className="group block p-6 rounded-[1.75rem] border border-slate-100 dark:border-white/[0.07] bg-white dark:bg-white/[0.04] backdrop-blur-xl hover:border-[#1D9E75]/30 dark:hover:border-[#1D9E75]/20 hover:shadow-lg hover:shadow-[#1D9E75]/8 dark:hover:shadow-[#1D9E75]/5 transition-all shadow-sm"
+          >
+            <div className="size-12 rounded-2xl bg-[#1D9E75]/10 border border-[#1D9E75]/20 flex items-center justify-center text-[#1D9E75] mb-4 group-hover:scale-110 transition-transform">
+              <UploadIcon className="size-5" />
+            </div>
+            <p className="text-base font-bold text-slate-800 dark:text-white mb-1">Lancer l'IA</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+              Uploader et extraire les données immédiatement.
+            </p>
+            <div className="mt-4 flex items-center gap-2 text-xs font-bold text-[#1D9E75] opacity-0 group-hover:opacity-100 transition-opacity">
+              Commencer <ArrowRightIcon className="size-3" />
+            </div>
+          </Link>
+
+          <Link
+            href="/dashboard/models"
+            className="group block p-6 rounded-[1.75rem] border border-slate-100 dark:border-white/[0.07] bg-white dark:bg-white/[0.04] backdrop-blur-xl hover:border-teal-400/30 dark:hover:border-teal-500/20 hover:shadow-lg hover:shadow-teal-100/40 dark:hover:shadow-teal-900/10 transition-all shadow-sm"
+          >
+            <div className="size-12 rounded-2xl bg-teal-50 dark:bg-teal-500/10 border border-teal-200/60 dark:border-teal-500/20 flex items-center justify-center text-teal-600 dark:text-teal-400 mb-4 group-hover:scale-110 transition-transform">
+              <LayoutGridIcon className="size-5" />
+            </div>
+            <p className="text-base font-bold text-slate-800 dark:text-white mb-1">Mes Modèles</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+              Gérer les schémas d'extraction JSON personnalisés.
+            </p>
+            <div className="mt-4 flex items-center gap-2 text-xs font-bold text-teal-600 dark:text-teal-400 opacity-0 group-hover:opacity-100 transition-opacity">
+              Configurer <ArrowRightIcon className="size-3" />
+            </div>
+          </Link>
+        </motion.div>
+
+      </div>
+    </motion.div>
   )
 }

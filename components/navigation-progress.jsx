@@ -1,12 +1,12 @@
 "use client"
 
-import { useEffect, Suspense } from 'react'
+import { useEffect, useRef, Suspense } from 'react'
 import { usePathname, useSearchParams } from 'next/navigation'
 import NProgress from 'nprogress'
 
-NProgress.configure({ showSpinner: false, minimum: 0.08, speed: 200, trickleSpeed: 200 })
+NProgress.configure({ showSpinner: false, minimum: 0.08, trickleSpeed: 200 })
 
-function NavigationEvents() {
+function RouteChangeListener() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
@@ -18,21 +18,31 @@ function NavigationEvents() {
 }
 
 export default function NavigationProgress() {
+  const currentPath = useRef(typeof window !== 'undefined' ? window.location.pathname : '')
+
   useEffect(() => {
-    const originalPushState = history.pushState.bind(history)
-    history.pushState = function (...args) {
+    function handleClick(e) {
+      const anchor = e.target.closest('a[href]')
+      if (!anchor) return
+
+      const href = anchor.getAttribute('href')
+      if (!href) return
+      // Skip external, hash, mailto, tel links
+      if (href.startsWith('http') || href.startsWith('#') || href.startsWith('mailto') || href.startsWith('tel')) return
+      // Skip same-page
+      const target = href.split('?')[0]
+      if (target === window.location.pathname) return
+
       NProgress.start()
-      return originalPushState(...args)
     }
 
-    return () => {
-      history.pushState = originalPushState
-    }
+    document.addEventListener('click', handleClick, true)
+    return () => document.removeEventListener('click', handleClick, true)
   }, [])
 
   return (
     <Suspense fallback={null}>
-      <NavigationEvents />
+      <RouteChangeListener />
     </Suspense>
   )
 }

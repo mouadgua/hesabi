@@ -100,12 +100,12 @@ export default function FirstExtractionWizard({ open, onComplete, onSkip }) {
       <DialogContent className="sm:max-w-lg" onInteractOutside={e => e.preventDefault()}>
         <DialogHeader>
           <div className="flex items-center gap-2 mb-1">
-            <SparklesIcon className="w-5 h-5 text-indigo-500" />
+            <SparklesIcon className="w-5 h-5 text-[#1D9E75]" />
             <DialogTitle className="text-lg">Personnalisez votre extraction</DialogTitle>
           </div>
           <div className="flex items-center gap-1.5 mt-1">
             {[1, 2, 3].map(s => (
-              <div key={s} className={`h-1.5 flex-1 rounded-full transition-colors ${s <= step ? "bg-indigo-500" : "bg-gray-200"}`} />
+              <div key={s} className={`h-1.5 flex-1 rounded-full transition-colors ${s <= step ? "bg-[#1D9E75]" : "bg-slate-200"}`} />
             ))}
           </div>
         </DialogHeader>
@@ -123,13 +123,13 @@ export default function FirstExtractionWizard({ open, onComplete, onSkip }) {
                     onClick={() => setLogiciel(l.id)}
                     className={`flex items-center gap-2.5 p-3 rounded-xl border-2 text-left transition-all ${
                       logiciel === l.id
-                        ? "border-indigo-500 bg-indigo-50"
+                        ? "border-[#1D9E75] bg-[#1D9E75]/8"
                         : "border-gray-200 hover:border-gray-300 bg-white"
                     }`}
                   >
                     <span className="text-xl">{l.icon}</span>
                     <span className="text-sm font-medium text-gray-800">{l.label}</span>
-                    {logiciel === l.id && <CheckCircle2Icon className="w-4 h-4 text-indigo-500 ml-auto" />}
+                    {logiciel === l.id && <CheckCircle2Icon className="w-4 h-4 text-[#1D9E75] ml-auto" />}
                   </button>
                 ))}
               </div>
@@ -154,12 +154,12 @@ export default function FirstExtractionWizard({ open, onComplete, onSkip }) {
                             onClick={() => toggleField(field.id)}
                             className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm text-left transition-all ${
                               selected
-                                ? "border-indigo-200 bg-indigo-50 text-indigo-800"
+                                ? "border-[#1D9E75]/30 bg-[#1D9E75]/8 text-[#1D9E75]/90"
                                 : "border-gray-100 bg-white text-gray-600 hover:border-gray-200"
                             }`}
                           >
                             <div className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
-                              selected ? "border-indigo-500 bg-indigo-500" : "border-gray-300"
+                              selected ? "border-[#1D9E75] bg-[#1D9E75]" : "border-gray-300"
                             }`}>
                               {selected && <CheckCircle2Icon className="w-3 h-3 text-white" />}
                             </div>
@@ -178,8 +178,8 @@ export default function FirstExtractionWizard({ open, onComplete, onSkip }) {
           {/* STEP 3 — Confirmation */}
           {step === 3 && (
             <div className="space-y-4 text-center py-2">
-              <div className="bg-indigo-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto">
-                <SparklesIcon className="w-8 h-8 text-indigo-600" />
+              <div className="bg-[#1D9E75]/10 w-16 h-16 rounded-full flex items-center justify-center mx-auto">
+                <SparklesIcon className="w-8 h-8 text-[#1D9E75]" />
               </div>
               <div>
                 <h3 className="font-semibold text-gray-900">Tout est prêt !</h3>
@@ -193,7 +193,7 @@ export default function FirstExtractionWizard({ open, onComplete, onSkip }) {
               {selectedFields.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 justify-center">
                   {selectedFields.slice(0, 6).map(f => (
-                    <Badge key={f} className="bg-indigo-100 text-indigo-700 border-indigo-200 text-[10px]">
+                    <Badge key={f} className="bg-[#1D9E75]/10 text-[#1D9E75] border-[#1D9E75]/20 text-[10px]">
                       {f.replace(/_/g, " ")}
                     </Badge>
                   ))}
@@ -224,11 +224,11 @@ export default function FirstExtractionWizard({ open, onComplete, onSkip }) {
               </Button>
             )}
             {step < 3 ? (
-              <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={() => setStep(s => s + 1)}>
+              <Button size="sm" className="bg-[#1D9E75] hover:bg-[#0F6E56] text-white" onClick={() => setStep(s => s + 1)}>
                 Suivant <ChevronRightIcon className="w-4 h-4 ml-1" />
               </Button>
             ) : (
-              <Button size="sm" className="bg-indigo-600 hover:bg-indigo-700 text-white" onClick={handleFinish} disabled={loading}>
+              <Button size="sm" className="bg-[#1D9E75] hover:bg-[#0F6E56] text-white" onClick={handleFinish} disabled={loading}>
                 {loading ? "Enregistrement…" : "Lancer l'extraction"}
               </Button>
             )}

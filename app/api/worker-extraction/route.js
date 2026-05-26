@@ -111,13 +111,20 @@ export async function POST(request) {
 
         // ── STEP 3 : Extraction ───────────────────────────────────────────────
         const { prompt: promptSuffix } = await buildExtractionPrompt(effectiveTemplateId, classification, userId ?? null)
-        const fullPrompt = `Tu es un expert-comptable. Extrait les informations du document fourni et renvoie-les UNIQUEMENT sous forme d'objet JSON valide, sans markdown ni texte autour.\n${promptSuffix}`
+        const fullPrompt = `Tu es un expert-comptable. Extrait les informations du document fourni et renvoie-les UNIQUEMENT sous forme d'objet JSON valide, sans markdown ni texte autour.\nSi le document contient un tableau (articles de facture, lignes de relevé bancaire, etc.), utilise TOUJOURS un tableau JSON d'objets — jamais de champs plats numérotés (ex: item_1_designation est interdit).\n${promptSuffix}`
 
         let geminiResult
         try {
           geminiResult = await model.generateContent([fullPrompt, documentConfig])
         } catch (geminiErr) {
-          throw new Error("L'IA est surchargée ou n'a pas pu traiter ce fichier.")
+          const m = (geminiErr.message ?? '').toLowerCase()
+          if (m.includes('429') || m.includes('quota') || m.includes('resource has been exhausted') || m.includes('rate')) {
+            throw new Error('QUOTA_ERROR')
+          }
+          if (m.includes('504') || m.includes('timeout') || m.includes('deadline') || m.includes('503')) {
+            throw new Error('TIMEOUT_ERROR')
+          }
+          throw new Error('AI_ERROR')
         }
 
         // ── STEP 4 : Parse + store ────────────────────────────────────────────

@@ -1,17 +1,19 @@
 import prisma from '@/lib/prisma'
 
+const ARRAY_RULE = `RÈGLE IMPORTANTE : Si le document contient un tableau (articles, lignes de relevé, détails de commande, etc.), représente-le TOUJOURS sous forme de tableau JSON d'objets, jamais sous forme de champs plats (interdit : item_1_designation, item_2_quantite, etc.).`
+
 function defaultPromptForType(type) {
   switch (type) {
     case 'facture':
-      return `Format attendu (JSON plat) : {"fournisseur":null,"date_facture":null,"numero_facture":null,"montant_ht":null,"montant_tva":null,"taux_tva":null,"montant_ttc":null,"ice":null,"categorie":null}`
+      return `${ARRAY_RULE}\nFormat attendu (JSON) : {"fournisseur":null,"date_facture":null,"numero_facture":null,"montant_ht":null,"montant_tva":null,"taux_tva":null,"montant_ttc":null,"ice":null,"categorie":null,"articles":[{"designation":null,"quantite":null,"prix_unitaire":null,"montant_ht":null}]}`
     case 'releve_bancaire':
-      return `Format attendu (JSON) : {"banque":null,"titulaire":null,"iban":null,"periode":null,"solde_ouverture":null,"solde_cloture":null,"lignes":[{"date":null,"libelle":null,"debit":null,"credit":null}]}`
+      return `${ARRAY_RULE}\nFormat attendu (JSON) : {"banque":null,"titulaire":null,"iban":null,"periode":null,"solde_ouverture":null,"solde_cloture":null,"lignes":[{"date":null,"libelle":null,"debit":null,"credit":null}]}`
     case 'bon_commande':
-      return `Format attendu (JSON plat) : {"fournisseur":null,"numero_bc":null,"date":null,"total_ht":null,"total_ttc":null,"articles":[{"designation":null,"quantite":null,"prix_unitaire":null}]}`
+      return `${ARRAY_RULE}\nFormat attendu (JSON) : {"fournisseur":null,"numero_bc":null,"date":null,"total_ht":null,"total_ttc":null,"articles":[{"designation":null,"quantite":null,"prix_unitaire":null,"montant_ht":null}]}`
     case 'recu':
-      return `Format attendu (JSON plat) : {"emetteur":null,"date":null,"montant":null,"mode_paiement":null,"reference":null}`
+      return `Format attendu (JSON) : {"emetteur":null,"date":null,"montant":null,"mode_paiement":null,"reference":null}`
     default:
-      return `Extrait toutes les informations clés du document. Renvoie UNIQUEMENT un objet JSON plat en snake_case. Adapte-toi au contenu.`
+      return `${ARRAY_RULE}\nExtrait toutes les informations clés du document en snake_case. Si le document contient un tableau de lignes, utilise un tableau d'objets JSON. Adapte-toi au contenu.`
   }
 }
 

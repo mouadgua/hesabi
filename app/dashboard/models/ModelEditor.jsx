@@ -98,7 +98,7 @@ export default function ModelEditor({ template }) {
     <>
       <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setColumns(initialColumns); setNomModele(template.nom_modele) } }}>
         <DialogTrigger asChild>
-          <Button variant="ghost" size="sm" className="w-full text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 gap-1.5">
+          <Button variant="ghost" size="sm" className="w-full text-[#1D9E75] hover:text-[#0F6E56] hover:bg-[#1D9E75]/8 gap-1.5">
             <Pencil1Icon className="w-3.5 h-3.5" /> Modifier
           </Button>
         </DialogTrigger>
@@ -106,7 +106,7 @@ export default function ModelEditor({ template }) {
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Pencil1Icon className="w-4 h-4 text-indigo-500" />
+              <Pencil1Icon className="w-4 h-4 text-[#1D9E75]" />
               Modifier le modèle
             </DialogTitle>
           </DialogHeader>
@@ -148,10 +148,10 @@ export default function ModelEditor({ template }) {
                     draggable
                     onDragStart={() => handleDragStart(idx)}
                     onDragOver={e => handleDragOver(e, idx)}
-                    className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm hover:border-indigo-300 transition-colors cursor-grab active:cursor-grabbing"
+                    className="flex items-center gap-2 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.08] rounded-lg px-3 py-2 shadow-sm hover:border-[#1D9E75]/40 transition-colors cursor-grab active:cursor-grabbing"
                   >
                     <GripVerticalIcon className="w-4 h-4 text-gray-300 shrink-0" />
-                    <Badge className="bg-indigo-100 text-indigo-700 border-indigo-200 font-mono text-[10px] shrink-0">
+                    <Badge className="bg-[#1D9E75]/10 text-[#1D9E75] border-[#1D9E75]/20 font-mono text-[10px] shrink-0">
                       {idx + 1}
                     </Badge>
                     <Input
@@ -177,7 +177,7 @@ export default function ModelEditor({ template }) {
               </button>
               <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Annuler</Button>
-                <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white" disabled={columns.length === 0}>
+                <Button type="submit" className="bg-[#1D9E75] hover:bg-[#0F6E56] text-white" disabled={columns.length === 0}>
                   Enregistrer
                 </Button>
               </div>

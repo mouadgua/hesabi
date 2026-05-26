@@ -3,6 +3,7 @@
 import prisma from '@/lib/prisma'
 import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 
 // ============================================================================
@@ -66,11 +67,11 @@ export async function uploadToDriveAction(formData) {
         }
     })
 
-    revalidatePath(`/dashboard/clients/${clientId}`)
+    revalidatePath('/dashboard/extraction')
 }
 
 // ============================================================================
-// 2. SUPPRESSION DE DOCUMENTS (NE REND PAS DE CRÉDITS)
+// 2. SUPPRESSION DE DOCUMENTS
 // ============================================================================
 export async function deleteDocumentsAction(formData) {
     const supabase = await createClient()
@@ -78,33 +79,25 @@ export async function deleteDocumentsAction(formData) {
     if (!user) throw new Error("Non autorisé")
 
     const documentIds = formData.getAll('documentIds')
-    const clientId = formData.get('client_id')
 
     if (!documentIds || documentIds.length === 0) return
 
-    // 1. Trouver les documents pour récupérer leurs chemins de stockage Supabase
     const documents = await prisma.document.findMany({
         where: { id: { in: documentIds } }
     })
 
     const filePaths = documents.map(doc => doc.chemin_storage).filter(Boolean)
 
-    // 2. Supprimer physiquement les fichiers du bucket Supabase
     if (filePaths.length > 0) {
         const { error } = await supabase.storage.from('documents').remove(filePaths)
         if (error) console.error("Erreur de suppression Supabase:", error)
     }
 
-    // 3. Supprimer les entrées de la base de données
     await prisma.document.deleteMany({
         where: { id: { in: documentIds } }
     })
 
-    // On rafraîchit la page (on utilise le clientId du premier document si non fourni)
-    const redirectClientId = clientId || (documents.length > 0 ? documents[0].client_id : null)
-    if (redirectClientId) {
-        revalidatePath(`/dashboard/clients/${redirectClientId}`)
-    }
+    revalidatePath('/dashboard/extraction')
 }
 
 // ============================================================================
@@ -115,7 +108,6 @@ export async function extractDocumentsAction(formData) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error("Non autorisé")
 
-    const clientId = formData.get('client_id')
     const templateId = formData.get('template_id')
     const documentIds = formData.getAll('documentIds')
 
@@ -146,58 +138,11 @@ export async function extractDocumentsAction(formData) {
         console.error("Erreur lors de la mise en file d'attente:", error)
     }
 
-    revalidatePath(`/dashboard/clients/${clientId}`)
+    revalidatePath('/dashboard/extraction')
 }
 
 // ============================================================================
-// 4. CRÉATION D'UN DOSSIER
-// ============================================================================
-export async function createFolderAction(formData) {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error("Non autorisé")
-
-    const clientId = formData.get('client_id')
-    const nom = formData.get('nom')
-
-    if (!nom || !clientId) return
-
-    await prisma.dossier.create({
-        data: {
-            nom: nom,
-            client_id: clientId
-        }
-    })
-
-    revalidatePath(`/dashboard/clients/${clientId}`)
-}
-
-// ============================================================================
-// 5. DÉPLACER DES DOCUMENTS VERS UN DOSSIER
-// ============================================================================
-export async function moveDocumentsAction(formData) {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error("Non autorisé")
-
-    const clientId = formData.get('client_id')
-    const dossierId = formData.get('dossier_id')
-    const documentIds = formData.getAll('documentIds')
-
-    if (!documentIds || documentIds.length === 0) return
-
-    await prisma.document.updateMany({
-        where: { id: { in: documentIds } },
-        data: { 
-            dossier_id: dossierId === 'ROOT' ? null : dossierId 
-        }
-    })
-
-    revalidatePath(`/dashboard/clients/${clientId}`)
-}
-
-// ============================================================================
-// 6. EXTRACTION SINGLE TEST (Ton ancienne fonction conservée)
+// 4. EXTRACTION SINGLE TEST
 // ============================================================================
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
@@ -302,7 +247,7 @@ export async function reExtractSingleDocumentAction(formData) {
         body: JSON.stringify({ documentIds: [documentId], templateId, userId: user.id })
     }).catch(err => console.error("Erreur worker:", err))
 
-    revalidatePath(`/dashboard/verification?id=${documentId}`)
+    revalidatePath(`/dashboard/verification/${documentId}`)
 }
 
 // ============================================================================
@@ -314,15 +259,12 @@ export async function validateDocumentAction(formData) {
     if (!user) throw new Error("Non autorisé")
 
     const documentId = formData.get('documentId')
-    const clientId = formData.get('clientId')
 
-    if (!documentId || !clientId) return
+    if (!documentId) return
 
-    // Reconstruction de l'objet JSON à partir des champs du formulaire
     const donnees_extraites = {};
     for (const [key, value] of formData.entries()) {
-        // On exclut les champs techniques et on garde les vraies données
-        if (key !== 'documentId' && key !== 'clientId' && !key.startsWith('$ACTION')) {
+        if (key !== 'documentId' && !key.startsWith('$ACTION')) {
             try {
                 // Si c'était un objet/tableau complexe (ex: les "lignes" de facture), on le parse
                 donnees_extraites[key] = JSON.parse(value);
@@ -332,18 +274,12 @@ export async function validateDocumentAction(formData) {
         }
     }
 
-    // Sauvegarde en base de données
     await prisma.document.update({
         where: { id: documentId },
-        data: {
-            statut: 'VALIDE',
-            donnees_extraites: donnees_extraites
-        }
+        data: { statut: 'VALIDE', donnees_extraites }
     })
 
-    // Redirection vers le dossier du client une fois validé
-    const { redirect } = await import('next/navigation');
-    redirect(`/dashboard/clients/${clientId}`)
+    redirect('/dashboard/extraction')
 }
 
 // ============================================================================
@@ -393,13 +329,16 @@ export async function createTemplateFromImageAction(formData) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error("Non autorisé")
 
-    const file = formData.get('file') // L'input file du formulaire
+    const file = formData.get('file')
     const nomModele = formData.get('nom_modele')
-    const cabinetId = formData.get('cabinet_id')
 
-    if (!file || !nomModele || !cabinetId) {
-        throw new Error("Données manquantes (Fichier, Nom du modèle ou Cabinet).")
+    if (!file || !nomModele) {
+        throw new Error("Fichier et nom du modèle requis.")
     }
+
+    const utilisateur = await prisma.utilisateur.findUnique({ where: { id: user.id }, select: { cabinet_id: true } })
+    if (!utilisateur?.cabinet_id) throw new Error("Cabinet introuvable.")
+    const cabinetId = utilisateur.cabinet_id
 
     try {
         // 1. Préparer l'image pour Gemini (Conversion en Base64)
@@ -525,57 +464,3 @@ export async function createTemplateFromColumnsAction(formData) {
     revalidatePath('/dashboard/models')
 }
 
-// ============================================================================
-// 12. CRÉER UN NOUVEAU CLIENT (PAGE DASHBOARD ACCUEIL)
-// ============================================================================
-export async function createClientAction(formData) {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error("Non autorisé")
-
-    const nom_entreprise = formData.get('nom_entreprise')
-    
-    // Champs optionnels
-    const ice = formData.get('ice') || null
-    const identifiant_fiscal = formData.get('identifiant_fiscal') || null
-    const registre_commerce = formData.get('registre_commerce') || null
-    const rib = formData.get('rib') || null
-    const adresse = formData.get('adresse') || null
-    const ville = formData.get('ville') || null
-
-    if (!nom_entreprise) {
-        throw new Error("Le nom de l'entreprise est requis.")
-    }
-
-    try {
-        // 1. Récupérer l'utilisateur pour trouver son cabinet_id
-        const dbUser = await prisma.utilisateur.findUnique({
-            where: { email: user.email }
-        })
-
-        if (!dbUser || !dbUser.cabinet_id) {
-            throw new Error("Cabinet introuvable pour cet utilisateur.")
-        }
-
-        // 2. Création du client dans la base de données
-        await prisma.client.create({
-            data: {
-                cabinet_id: dbUser.cabinet_id,
-                nom_entreprise: nom_entreprise,
-                ice: ice,
-                identifiant_fiscal: identifiant_fiscal,
-                registre_commerce: registre_commerce,
-                rib: rib,
-                adresse: adresse,
-                ville: ville
-            }
-        })
-
-        // 3. Rafraîchir le dashboard pour afficher le nouveau client
-        revalidatePath('/dashboard')
-        
-    } catch (error) {
-        console.error("Erreur lors de la création du client :", error)
-        throw new Error("Impossible de créer le client.")
-    }
-}

@@ -18,7 +18,11 @@ export async function login(formData) {
   })
 
   if (error) {
-    return redirect('/login?message=Identifiants incorrects')
+    console.error('[login] Supabase error:', error.message, error.status)
+    const msg = error.message?.includes('Email not confirmed')
+      ? "Veuillez confirmer votre email avant de vous connecter."
+      : `Identifiants incorrects (${error.message})`
+    return redirect('/login?message=' + encodeURIComponent(msg))
   }
 
   revalidatePath('/dashboard')

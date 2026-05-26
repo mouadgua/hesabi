@@ -1,221 +1,223 @@
-import prisma from '@/lib/prisma'
 import { createClient } from '@/utils/supabase/server'
+import { redirect } from 'next/navigation'
+import prisma from '@/lib/prisma'
 import Link from 'next/link'
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Label } from "@/components/ui/label"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectGroup, SelectLabel, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { reExtractSingleDocumentAction } from '@/app/dashboard/actions'
-import { ArrowLeftIcon, FileTextIcon, RefreshCwIcon, SparklesIcon, PlayIcon } from "lucide-react"
+import {
+  BellIcon, CheckCircle2Icon, AlertCircleIcon, ClockIcon,
+  ChevronRightIcon, SparklesIcon,
+} from 'lucide-react'
 
-import ExportModal from '@/app/dashboard/clients/[id]/ExportModal'
-import { SubmitButton } from '@/components/ui/submit-button'
-import VerificationForm from './VerificationForm'
-import ProcessingView from '@/components/ProcessingView'
+function timeAgo(iso) {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return "à l'instant"
+  if (mins < 60) return `${mins} min`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h`
+  const days = Math.floor(hrs / 24)
+  if (days < 7) return `${days}j`
+  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+}
 
-export default async function VerificationPage({ searchParams }) {
-  const resolvedSearchParams = await searchParams;
-  const targetId = resolvedSearchParams.id;
+const NOTIF_CONFIG = {
+  A_VERIFIER: {
+    Icon: SparklesIcon,
+    iconBg: 'bg-amber-100 dark:bg-amber-500/10',
+    iconColor: 'text-amber-600 dark:text-amber-400',
+    badge: 'bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-500/20',
+    label: 'À vérifier',
+    getMessage: (name) => `${name ?? 'Document'} est prêt à vérifier`,
+    cta: 'Vérifier →',
+  },
+  REJETE: {
+    Icon: AlertCircleIcon,
+    iconBg: 'bg-red-100 dark:bg-red-500/10',
+    iconColor: 'text-red-600 dark:text-red-400',
+    badge: 'bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 border-red-200 dark:border-red-500/20',
+    label: 'Rejeté',
+    getMessage: (name) => `Erreur d'extraction : ${name ?? 'Document'}`,
+    cta: 'Voir →',
+  },
+  EN_COURS_IA: {
+    Icon: ClockIcon,
+    iconBg: 'bg-blue-100 dark:bg-blue-500/10',
+    iconColor: 'text-blue-600 dark:text-blue-400',
+    badge: 'bg-blue-100 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20',
+    label: 'En cours',
+    getMessage: (name) => `Extraction IA en cours : ${name ?? 'Document'}`,
+    cta: null,
+  },
+}
 
-  if (!targetId) return <div className="p-8 text-center">Aucun document sélectionné</div>
-
+export default async function NotificationsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return <div>Non autorisé</div>
+  if (!user) redirect('/login')
 
-  const document = await prisma.document.findUnique({
-    where: { id: targetId },
-    include: { 
-      client: { include: { cabinet: { include: { templates: true } } } }, 
-      template: true 
-    }
+  const utilisateur = await prisma.utilisateur.findUnique({
+    where: { id: user.id },
+    select: { cabinet_id: true },
+  })
+  if (!utilisateur?.cabinet_id) redirect('/onboarding')
+
+  const notifications = await prisma.document.findMany({
+    where: {
+      client: { cabinet_id: utilisateur.cabinet_id },
+      statut: { in: ['A_VERIFIER', 'REJETE', 'EN_COURS_IA'] },
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: 50,
+    select: {
+      id: true,
+      nom_fichier: true,
+      statut: true,
+      error_message: true,
+      updatedAt: true,
+    },
   })
 
-  if (!document) return <div>Document introuvable</div>
-
-  const templates = document.client.cabinet.templates
-
-  let signedUrl = null
-  if (document.chemin_storage) {
-    const { data } = await supabase.storage.from('documents').createSignedUrl(document.chemin_storage, 3600);
-    signedUrl = data?.signedUrl;
-  }
-
-  const extractedData = document.donnees_extraites && typeof document.donnees_extraites === 'object'
-    ? document.donnees_extraites
-    : {};
-
-  const hasData = Object.keys(extractedData).length > 0;
-
-  const hasPreferences = hasData && document.document_type
-    ? !!(await prisma.userFieldPreference.findUnique({
-        where: { user_id_document_type: { user_id: user.id, document_type: document.document_type } }
-      }))
-    : false;
+  const aVerifier = notifications.filter(n => n.statut === 'A_VERIFIER')
+  const enErreur = notifications.filter(n => n.statut === 'REJETE')
+  const enCours = notifications.filter(n => n.statut === 'EN_COURS_IA')
 
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)] bg-gray-50 overflow-hidden">
-      
-      {/* HEADER */}
-      <div className="flex items-center justify-between p-4 bg-white border-b shrink-0 shadow-sm z-10">
-        <div className="flex items-center gap-4">
-          <Link href={`/dashboard/clients/${document.client_id}`}>
-            <Button variant="ghost" size="icon" className="rounded-full border shadow-sm">
-              <ArrowLeftIcon className="w-4 h-4 text-gray-600" />
-            </Button>
+    <div className="p-4 md:p-8 max-w-3xl mx-auto space-y-6">
+
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="flex size-10 items-center justify-center rounded-xl bg-slate-100 dark:bg-white/[0.06] border border-slate-200/60 dark:border-white/10">
+          <BellIcon className="size-5 text-slate-600 dark:text-slate-300" />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Notifications</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {notifications.length === 0
+              ? 'Aucune action en attente'
+              : `${notifications.length} notification${notifications.length > 1 ? 's' : ''} en attente`}
+          </p>
+        </div>
+        {notifications.length > 0 && (
+          <span className="ml-auto flex size-7 items-center justify-center rounded-full bg-[#1D9E75] text-[11px] font-bold text-white">
+            {notifications.length > 99 ? '99+' : notifications.length}
+          </span>
+        )}
+      </div>
+
+      {/* Empty state */}
+      {notifications.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20 rounded-2xl border border-slate-200/60 dark:border-white/[0.07] bg-white/60 dark:bg-white/[0.03] backdrop-blur-xl text-center space-y-3">
+          <div className="flex size-16 items-center justify-center rounded-2xl bg-slate-100 dark:bg-white/[0.05]">
+            <CheckCircle2Icon className="size-8 text-[#1D9E75]" />
+          </div>
+          <p className="text-base font-semibold text-slate-700 dark:text-slate-300">Tout est à jour !</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500 max-w-xs">
+            Aucun document n'attend votre attention. Revenez après vos prochaines extractions.
+          </p>
+          <Link
+            href="/dashboard/extraction"
+            className="mt-2 inline-flex items-center gap-2 rounded-xl bg-[#1D9E75] px-4 py-2 text-sm font-medium text-white transition-all hover:opacity-90 hover:scale-[0.99]"
+          >
+            <SparklesIcon className="size-4" /> Lancer une extraction
           </Link>
-          <div>
-            <h1 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-              <FileTextIcon className="w-5 h-5 text-indigo-600" /> 
-              Espace de travail : {document.nom_fichier || "Document"}
-            </h1>
-            <p className="text-xs text-gray-500">Client : {document.client.nom_entreprise} • Statut actuel : {document.statut}</p>
-          </div>
         </div>
-      </div>
-
-      {document.statut === 'EN_COURS_IA' ? (
-        <ProcessingView documentId={document.id} />
-      ) : (
-      <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
-
-        {/* GAUCHE : PDF */}
-        <div className="w-full md:w-1/2 h-[50vh] md:h-full border-b md:border-b-0 md:border-r bg-gray-100 p-4">
-          <div className="w-full h-full bg-white rounded-xl shadow-inner border overflow-hidden relative">
-            {signedUrl ? (
-              <iframe src={signedUrl} className="w-full h-full border-0 absolute top-0 left-0" />
-            ) : (
-              <div className="flex items-center justify-center h-full text-gray-400">Fichier indisponible</div>
-            )}
-          </div>
-        </div>
-
-        {/* DROITE : DONNÉES */}
-        <div className="w-full md:w-1/2 h-[50vh] md:h-full overflow-y-auto p-4 md:p-6 bg-gray-50/50">
-          
-          <Card className="border-indigo-100 shadow-sm bg-white h-full flex flex-col">
-            <CardHeader className="bg-indigo-50/50 border-b pb-4 flex flex-col md:flex-row items-start md:items-center justify-between shrink-0 gap-3">
-              <CardTitle className="text-lg text-indigo-900">
-                {hasData ? "Données Extraites" : "Paramètres d'extraction"}
-              </CardTitle>
-              
-              {hasData && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <ExportModal selectedDocs={[document]} />
-
-                  {/* MODALE RE-EXTRAIRE AVEC LOADER */}
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" size="sm" className="text-blue-600 border-blue-200 hover:bg-blue-50 h-10">
-                        <RefreshCwIcon className="w-4 h-4 mr-2" /> Re-extraire
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="sm:max-w-md">
-                      <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2"><SparklesIcon className="w-5 h-5 text-blue-600"/> Lancer une nouvelle extraction</DialogTitle>
-                        <DialogDescription>Sélectionnez un nouveau modèle pour écraser les données actuelles.</DialogDescription>
-                      </DialogHeader>
-                      <form action={reExtractSingleDocumentAction} className="space-y-4 pt-4">
-                        <input type="hidden" name="documentId" value={document.id} />
-                        <Select name="template_id" required defaultValue="NO_MODEL">
-                          <SelectTrigger className="w-full h-10"><SelectValue placeholder="Choisir un modèle..." /></SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              <SelectLabel>Options</SelectLabel>
-                              <SelectItem value="NO_MODEL" className="font-semibold text-indigo-600">✨ IA Libre</SelectItem>
-                              <SelectItem value="DEFAULT_FACTURE">Facture Générique</SelectItem>
-                            </SelectGroup>
-                            <SelectGroup>
-                              <SelectLabel>Vos Modèles</SelectLabel>
-                              {templates.map(t => <SelectItem key={t.id} value={t.id}>{t.nom_modele}</SelectItem>)}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                        
-                        {/* BOUTON INTELLIGENT QUI SE GÈRE TOUT SEUL */}
-                        <SubmitButton 
-                          type="submit" 
-                          className="w-full bg-blue-600 hover:bg-blue-700 text-white"
-                          steppedTexts={["Préparation...", "Analyse par Gemini 2.5...", "Finalisation..."]}
-                        >
-                          Relancer Gemini
-                        </SubmitButton>
-                      </form>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-              )}
-            </CardHeader>
-            
-            <CardContent className="pt-6 flex-1 overflow-y-auto">
-              
-              {!hasData ? (
-                <div className="flex flex-col items-center justify-center h-full space-y-6">
-                  <div className="text-center">
-                    <div className="bg-indigo-100 p-4 rounded-full inline-block mb-4">
-                      <SparklesIcon className="w-8 h-8 text-indigo-600" />
-                    </div>
-                    <h3 className="text-xl font-bold text-gray-900">Analyse du document</h3>
-                    <p className="text-sm text-gray-500 mt-2 max-w-sm">
-                      Lisez le document à gauche, choisissez le modèle le plus adapté ci-dessous, et laissez l'IA faire le reste.
-                    </p>
-                  </div>
-
-                  <form action={reExtractSingleDocumentAction} className="w-full max-w-sm space-y-4 bg-gray-50 p-6 rounded-xl border">
-                    <input type="hidden" name="documentId" value={document.id} />
-                    <div className="space-y-2">
-                      <Label>Modèle d'extraction</Label>
-                      <Select name="template_id" required defaultValue="NO_MODEL">
-                        <SelectTrigger className="w-full h-10 bg-white">
-                          <SelectValue placeholder="Choisir un modèle..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            <SelectLabel>Options</SelectLabel>
-                            <SelectItem value="NO_MODEL" className="font-semibold text-indigo-600">✨ IA Libre</SelectItem>
-                            <SelectItem value="DEFAULT_FACTURE">Facture Générique</SelectItem>
-                          </SelectGroup>
-                          <SelectGroup>
-                            <SelectLabel>Vos Modèles</SelectLabel>
-                            {templates.map(t => <SelectItem key={t.id} value={t.id}>{t.nom_modele}</SelectItem>)}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <SubmitButton 
-                      type="submit" 
-                      className="w-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-md h-10"
-                      icon={<PlayIcon className="w-4 h-4" />}
-                      steppedTexts={["Préparation...", "Analyse IA...", "Finalisation..."]}
-                    >
-                      Lancer l'extraction
-                    </SubmitButton>
-                  </form>
-                </div>
-              ) : (
-                <VerificationForm
-                  document={{
-                    id: document.id,
-                    client_id: document.client_id,
-                    document_type: document.document_type ?? null,
-                    fournisseur_detecte: document.fournisseur_detecte ?? null,
-                  }}
-                  extractedData={extractedData}
-                  hasPreferences={hasPreferences}
-                  modelFields={
-                    document.template?.structure_json &&
-                    typeof document.template.structure_json === 'object'
-                      ? Object.keys(document.template.structure_json)
-                      : null
-                  }
-                />
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
       )}
+
+      {/* Section — À vérifier */}
+      {aVerifier.length > 0 && (
+        <NotifSection
+          title="Prêts à vérifier"
+          count={aVerifier.length}
+          countColor="bg-amber-500"
+          items={aVerifier}
+        />
+      )}
+
+      {/* Section — Erreurs */}
+      {enErreur.length > 0 && (
+        <NotifSection
+          title="Erreurs d'extraction"
+          count={enErreur.length}
+          countColor="bg-red-500"
+          items={enErreur}
+        />
+      )}
+
+      {/* Section — En cours */}
+      {enCours.length > 0 && (
+        <NotifSection
+          title="En cours de traitement"
+          count={enCours.length}
+          countColor="bg-blue-500"
+          items={enCours}
+        />
+      )}
+    </div>
+  )
+}
+
+function NotifSection({ title, count, countColor, items }) {
+  return (
+    <div className="rounded-2xl border border-slate-200/60 dark:border-white/[0.07] bg-white/70 dark:bg-white/[0.04] backdrop-blur-xl shadow-sm overflow-hidden">
+      <div className="flex items-center gap-3 border-b border-slate-100/80 dark:border-white/[0.05] px-5 py-4">
+        <h2 className="text-sm font-bold text-slate-700 dark:text-slate-200 flex-1">{title}</h2>
+        <span className={`flex size-5 items-center justify-center rounded-full text-[10px] font-bold text-white ${countColor}`}>
+          {count}
+        </span>
+      </div>
+
+      <div className="divide-y divide-slate-100/80 dark:divide-white/[0.04]">
+        {items.map(item => {
+          const cfg = NOTIF_CONFIG[item.statut]
+          if (!cfg) return null
+          const { Icon, iconBg, iconColor, badge, label, getMessage, cta } = cfg
+
+          return (
+            <div key={item.id} className="flex items-start gap-4 px-5 py-4 hover:bg-slate-50/60 dark:hover:bg-white/[0.02] transition-colors group">
+              {/* Icon */}
+              <div className={`flex size-9 shrink-0 items-center justify-center rounded-xl border border-black/[0.05] dark:border-white/10 ${iconBg} ${iconColor}`}>
+                <Icon className="size-4" />
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0 space-y-1">
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 leading-snug">
+                  {getMessage(item.nom_fichier)}
+                </p>
+                {item.error_message && (
+                  <p className="text-xs text-red-500 dark:text-red-400 truncate">
+                    {item.error_message}
+                  </p>
+                )}
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border font-medium ${badge}`}>
+                    {label}
+                  </span>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-600">
+                    {timeAgo(item.updatedAt)}
+                  </span>
+                </div>
+              </div>
+
+              {/* CTA */}
+              {cta && (
+                <Link
+                  href={`/dashboard/verification/${item.id}`}
+                  className="shrink-0 flex items-center gap-1 text-xs font-bold text-[#1D9E75] hover:text-[#0F6E56] dark:hover:text-[#2DD4A0] transition-colors opacity-0 group-hover:opacity-100"
+                >
+                  {cta} <ChevronRightIcon className="size-3" />
+                </Link>
+              )}
+
+              {/* Always visible arrow for mobile */}
+              {cta && (
+                <Link href={`/dashboard/verification/${item.id}`} className="shrink-0 sm:hidden">
+                  <ChevronRightIcon className="size-4 text-slate-400" />
+                </Link>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

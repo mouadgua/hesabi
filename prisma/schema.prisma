@@ -155,6 +155,16 @@ model MissingFieldRequest {
   createdAt     DateTime @default(now())
 }
 
+// --- 7. BETA ACCESS KEYS ---
+model BetaKey {
+  id        String    @id @default(cuid())
+  key       String    @unique
+  used      Boolean   @default(false)
+  used_by   String?
+  used_at   DateTime?
+  createdAt DateTime  @default(now())
+}
+
 // --- ÉNUMÉRATIONS ---
 enum DocumentStatut {
   A_EXTRAIRE      // Fichier dans le dossier, prêt à être sélectionné

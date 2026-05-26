@@ -4,36 +4,33 @@ import { createClient } from '@/utils/supabase/server'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
 
-export async function setupWorkspace(formData) {
+export async function setupWorkspace({ prenom }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-
   if (!user) throw new Error("Non autorisé")
 
-  // On utilise une TRANSACTION Prisma pour s'assurer que si la création
-  // du cabinet échoue, la création de l'utilisateur n'est pas sauvegardée
   await prisma.$transaction(async (tx) => {
-    
-    // 1. On crée le Cabinet
-    const nouveauCabinet = await tx.cabinet.create({
-      data: {
-        nom: formData.nomCabinet,
-        plan_abonnement: "ESSAI_GRATUIT",
-      }
+    const cabinet = await tx.cabinet.create({
+      data: { nom: `Cabinet de ${prenom}` },
     })
 
-    // 2. On crée l'Utilisateur et on le lie au Cabinet
-    await tx.utilisateur.create({
-      data: {
-        id: user.id, // On utilise EXACTEMENT l'ID de Supabase
+    await tx.utilisateur.upsert({
+      where: { id: user.id },
+      create: {
+        id: user.id,
         email: user.email,
-        nom: formData.nomComplet,
-        cabinet_id: nouveauCabinet.id,
-        role: "EXPERT_COMPTABLE", // Il est le premier, c'est le boss
-      }
+        nom: prenom,
+        cabinet_id: cabinet.id,
+        role: 'EXPERT_COMPTABLE',
+        onboarding_done: true,
+      },
+      update: {
+        nom: prenom,
+        cabinet_id: cabinet.id,
+        onboarding_done: true,
+      },
     })
   })
 
-  // 3. Une fois terminé, on l'envoie sur son beau tableau de bord
   redirect('/dashboard')
 }

@@ -1,352 +1,579 @@
 "use client"
 
-import Link from 'next/link'
-import { motion } from 'framer-motion'
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input" // NOUVEL IMPORT
-import { Textarea } from "@/components/ui/textarea" // NOUVEL IMPORT
+import { useEffect, useRef, useState } from "react"
+import Link from "next/link"
+import { useTheme } from "next-themes"
+import { gsap } from "gsap"
+import { ScrollTrigger } from "gsap/ScrollTrigger"
 import {
-  FileTextIcon, PlayIcon, DownloadIcon, FolderIcon,
-  SparklesIcon, ArrowRightIcon, BrainCircuitIcon,
-  MessageSquareIcon, ShieldCheckIcon, ZapIcon, CheckCircle2Icon, Badge,
-  MailIcon, MapPinIcon, SendIcon // NOUVELLES ICONES
+  SparklesIcon, ArrowRightIcon, ZapIcon, DownloadIcon,
+  ShieldCheckIcon, MailIcon,
+  SunIcon, MoonIcon, FileTextIcon, LayersIcon,
+  BrainCircuitIcon,
 } from "lucide-react"
-import CardSwap, { Card } from '@/components/CardSwap' // <-- N'oublie pas l'import de Card ici
 
-// --- Variantes Framer Motion ---
-const fadeUp = {
-  hidden: { opacity: 0, y: 30 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] } }
+import Image from "next/image"
+import Aurora from "@/components/reactbits/Aurora"
+import BlurText from "@/components/reactbits/BlurText"
+import SpotlightCard from "@/components/reactbits/SpotlightCard"
+import CountUp from "@/components/reactbits/CountUp"
+
+/* ─── Theme toggle ───────────────────────────────────── */
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  if (!mounted) return null
+  return (
+    <button
+      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      aria-label="Changer le thème"
+      className="flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 hover:bg-white/20 transition-all cursor-pointer backdrop-blur-sm"
+    >
+      {theme === "dark"
+        ? <SunIcon className="size-4 text-amber-300" />
+        : <MoonIcon className="size-4 text-slate-600" />
+      }
+    </button>
+  )
 }
 
-const staggerContainer = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.15, delayChildren: 0.1 }
-  }
-}
+/* ─── Data ───────────────────────────────────────────── */
+const STATS = [
+  { to: 15, suffix: "+", label: "Extractions offertes", icon: SparklesIcon },
+  { to: 10, prefix: "< ", suffix: "s", label: "Par document", icon: ZapIcon },
+  { to: 100, suffix: "%", label: "Données sécurisées", icon: ShieldCheckIcon },
+  { to: 3, suffix: "x", label: "Plus rapide qu'à la main", icon: DownloadIcon },
+]
 
-const floatingAnim = {
-  animate: {
-    y: [0, -15, 0],
-    transition: { duration: 5, repeat: Infinity, ease: "easeInOut" }
-  }
-}
+const FEATURES = [
+  {
+    icon: BrainCircuitIcon,
+    gradient: "from-[#1D9E75]/20 to-[#1D9E75]/5",
+    iconCls: "text-[#1D9E75] bg-[#1D9E75]/15",
+    title: "Modèles IA Flexibles",
+    desc: "Passez de l'IA Libre à vos propres structures strictes. L'IA s'adapte aux normes de votre cabinet.",
+  },
+  {
+    icon: ZapIcon,
+    gradient: "from-amber-500/15 to-amber-500/5",
+    iconCls: "text-amber-400 bg-amber-400/15",
+    title: "Traitement Asynchrone",
+    desc: "Envoyez 100 factures d'un coup. La file d'attente travaille en arrière-plan pendant que vous continuez.",
+  },
+  {
+    icon: DownloadIcon,
+    gradient: "from-teal-400/15 to-teal-400/5",
+    iconCls: "text-teal-400 bg-teal-400/15",
+    title: "Export Intelligent",
+    desc: "Excel multi-onglets séparant entêtes et détails, ou ZIP complet. Format prêt pour votre logiciel.",
+  },
+  {
+    icon: LayersIcon,
+    gradient: "from-purple-400/15 to-purple-400/5",
+    iconCls: "text-purple-400 bg-purple-400/15",
+    title: "Gestion Multi-Clients",
+    desc: "Organisez vos dossiers par client. Chaque cabinet gère ses données en toute indépendance.",
+  },
+  {
+    icon: ShieldCheckIcon,
+    gradient: "from-rose-400/15 to-rose-400/5",
+    iconCls: "text-rose-400 bg-rose-400/15",
+    title: "Données Sécurisées",
+    desc: "Hébergement chiffré, aucune donnée partagée avec des tiers. Votre cabinet reste souverain.",
+  },
+  {
+    icon: FileTextIcon,
+    gradient: "from-sky-400/15 to-sky-400/5",
+    iconCls: "text-sky-400 bg-sky-400/15",
+    title: "Tout Type de Document",
+    desc: "Factures, relevés bancaires, bons de commande — Hesabi lit et structure n'importe quel format.",
+  },
+]
 
+const STEPS = [
+  {
+    num: "01",
+    icon: FileTextIcon,
+    title: "Uploadez vos documents",
+    desc: "Glissez-déposez vos factures ou images. Upload en masse et dossiers entiers supportés.",
+  },
+  {
+    num: "02",
+    icon: BrainCircuitIcon,
+    title: "L'IA extrait les données",
+    desc: "Gemini 2.5 analyse chaque document et structure les informations selon votre modèle personnalisé.",
+  },
+  {
+    num: "03",
+    icon: DownloadIcon,
+    title: "Vérifiez et exportez",
+    desc: "Corrigez en un clic, puis exportez en Excel ou CSV, prêt pour votre logiciel comptable.",
+  },
+]
+
+/* ─── Page ───────────────────────────────────────────── */
 export default function LandingPage() {
-  // FONCTION DE SCROLL FLUIDE VERS LE CONTACT
-  const scrollToContact = () => {
-    document.getElementById('contact')?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const pageRef = useRef(null)
+  const [heroReady, setHeroReady] = useState(false)
+  const { resolvedTheme } = useTheme()
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  const dark = mounted && resolvedTheme === "dark"
+
+  useEffect(() => {
+    gsap.registerPlugin(ScrollTrigger)
+    const ctx = gsap.context(() => {
+
+      /* Hero badge */
+      gsap.fromTo(".anim-badge",
+        { opacity: 0, y: -16, scale: 0.9 },
+        { opacity: 1, y: 0, scale: 1, duration: 0.6, ease: "back.out(1.5)", delay: 0.2 }
+      )
+
+      /* Floating badges inside hero (triggered after BlurText) */
+      /* Product mockup reveal */
+      gsap.fromTo(".product-mockup",
+        { opacity: 0, y: 80, scale: 0.93, rotateX: 10, transformPerspective: 1200 },
+        {
+          opacity: 1, y: 0, scale: 1, rotateX: 0, transformPerspective: 1200,
+          duration: 1.3, ease: "power3.out",
+          scrollTrigger: { trigger: ".product-section", start: "top 80%" },
+        }
+      )
+      gsap.fromTo(".product-hint",
+        { opacity: 0, y: 8 },
+        { opacity: 1, y: 0, duration: 0.7, ease: "power2.out",
+          scrollTrigger: { trigger: ".product-section", start: "top 85%" },
+        }
+      )
+
+      /* Stats */
+      gsap.fromTo(".stat-card",
+        { opacity: 0, y: 40, scale: 0.95 },
+        {
+          opacity: 1, y: 0, scale: 1, duration: 0.7, stagger: 0.12, ease: "power3.out",
+          scrollTrigger: { trigger: ".stats-row", start: "top 85%" },
+        }
+      )
+
+      /* Section headers */
+      gsap.utils.toArray(".section-hdr").forEach((el) => {
+        gsap.fromTo(el,
+          { opacity: 0, y: 30 },
+          { opacity: 1, y: 0, duration: 0.8, ease: "power3.out",
+            scrollTrigger: { trigger: el, start: "top 88%" },
+          }
+        )
+      })
+
+      /* Feature cards */
+      gsap.fromTo(".feat-card",
+        { opacity: 0, y: 50 },
+        {
+          opacity: 1, y: 0, duration: 0.7, stagger: 0.1, ease: "power2.out",
+          scrollTrigger: { trigger: ".feat-grid", start: "top 78%" },
+        }
+      )
+
+      /* Steps */
+      gsap.fromTo(".step-item",
+        { opacity: 0, x: -40 },
+        {
+          opacity: 1, x: 0, duration: 0.7, stagger: 0.2, ease: "power2.out",
+          scrollTrigger: { trigger: ".steps-row", start: "top 80%" },
+        }
+      )
+
+      /* CTA */
+      gsap.fromTo(".cta-box",
+        { opacity: 0, scale: 0.94, y: 20 },
+        {
+          opacity: 1, scale: 1, y: 0, duration: 0.9, ease: "power3.out",
+          scrollTrigger: { trigger: ".cta-box", start: "top 85%" },
+        }
+      )
+
+      /* Contact */
+      gsap.fromTo(".contact-box",
+        { opacity: 0, y: 40 },
+        {
+          opacity: 1, y: 0, duration: 0.9, ease: "power2.out",
+          scrollTrigger: { trigger: ".contact-box", start: "top 85%" },
+        }
+      )
+
+    }, pageRef)
+    return () => ctx.revert()
+  }, [])
+
+  /* Animate sub + CTAs after BlurText completes */
+  useEffect(() => {
+    if (!heroReady) return
+    gsap.fromTo(".anim-sub",
+      { opacity: 0, y: 24 },
+      { opacity: 1, y: 0, duration: 0.9, ease: "power3.out" }
+    )
+    gsap.fromTo(".anim-cta",
+      { opacity: 0, y: 20 },
+      { opacity: 1, y: 0, duration: 0.8, ease: "power3.out", delay: 0.15 }
+    )
+  }, [heroReady])
 
   return (
-    <div className="min-h-screen bg-[#fafcff] text-slate-800 font-sans selection:bg-indigo-200 overflow-x-hidden">
+    <div ref={pageRef} className="min-h-screen bg-[#f5fbf7] dark:bg-[#060d09] text-slate-900 dark:text-slate-100 font-sans overflow-x-hidden selection:bg-[#1D9E75]/20">
 
-      {/* EFFETS DE FOND FUTURISTES (Light Theme) */}
-      <div className="fixed inset-0 z-0 pointer-events-none">
-        <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-indigo-300/30 blur-[120px]" />
-        <div className="absolute top-[20%] right-[-10%] w-[600px] h-[600px] rounded-full bg-cyan-200/30 blur-[120px]" />
-        <div className="absolute bottom-[-20%] left-[20%] w-[700px] h-[700px] rounded-full bg-emerald-200/20 blur-[150px]" />
-        {/* Grille subtile superposée */}
-        <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]" />
-      </div>
-
-      {/* NAVBAR GLASSMORPHISM */}
-      <motion.nav
-        initial={{ y: -100 }} animate={{ y: 0 }} transition={{ duration: 0.8, ease: "easeOut" }}
-        className="fixed top-6 inset-x-0 mx-auto max-w-6xl z-50 px-4 sm:px-6"
-      >
-        <div className="bg-white/40 backdrop-blur-2xl border border-white/60 shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-full h-16 flex items-center justify-between px-6">
-          <div className="flex items-center gap-2">
-            <div className="bg-gradient-to-br from-indigo-500 to-cyan-500 p-2 rounded-xl shadow-lg shadow-indigo-200/50">
-              <BrainCircuitIcon className="w-5 h-5 text-white" />
+      {/* ── NAVBAR ─────────────────────────────────── */}
+      <nav className="fixed top-4 inset-x-0 mx-auto max-w-6xl z-50 px-4">
+        <div className="bg-white/20 dark:bg-white/[0.04] backdrop-blur-2xl border border-white/40 dark:border-white/[0.08] shadow-lg dark:shadow-black/40 rounded-full h-16 flex items-center justify-between px-6">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#1D9E75] shadow-lg shadow-[#1D9E75]/40">
+              <SparklesIcon className="size-4 text-white" />
             </div>
-            <span className="font-extrabold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600">
-              Fiduciaire Atlas
-            </span>
-            <span className="ml-2 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-indigo-600 bg-indigo-100/80 rounded-full border border-indigo-200/50">
-              Bêta
-            </span>
+            <span className="font-extrabold text-xl tracking-tight text-slate-900 dark:text-white">Hesabi</span>
+            <span className="hidden sm:inline px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#1D9E75] bg-[#1D9E75]/10 rounded-full border border-[#1D9E75]/20">Bêta</span>
           </div>
-          <div className="flex items-center gap-4">
-            <button onClick={scrollToContact} className="hidden md:block text-sm font-semibold text-slate-500 hover:text-indigo-600 transition-colors">
-              Contact
-            </button>
-            <Link href="/dashboard">
-              <Button className="bg-slate-900 hover:bg-slate-800 text-white rounded-full px-6 shadow-md transition-all hover:scale-105 hover:shadow-xl hover:shadow-slate-900/20">
-                Connexion <ArrowRightIcon className="w-4 h-4 ml-2" />
-              </Button>
+          <div className="flex items-center gap-3">
+            <a href="#contact" className="hidden md:block text-sm font-semibold text-slate-600 dark:text-slate-400 hover:text-[#1D9E75] dark:hover:text-[#1D9E75] transition-colors">Contact</a>
+            <ThemeToggle />
+            <Link href="/login">
+              <button className="bg-[#1D9E75] hover:bg-[#0F6E56] text-white rounded-full px-5 py-2 text-sm font-semibold shadow-lg shadow-[#1D9E75]/30 transition-all hover:scale-105 cursor-pointer">
+                Connexion <ArrowRightIcon className="inline size-3.5 ml-1" />
+              </button>
             </Link>
           </div>
         </div>
-      </motion.nav>
+      </nav>
 
-      {/* HERO SECTION (SPLIT LAYOUT) */}
-      <section className="relative pt-40 pb-20 lg:pt-52 lg:pb-32 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-8 items-center">
+      {/* ── HERO ───────────────────────────────────── */}
+      <section className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden pb-24">
 
-            {/* PARTIE GAUCHE : TEXTE & CTA */}
-            <motion.div
-              initial="hidden" animate="visible" variants={staggerContainer}
-              className="space-y-8 text-center lg:text-left"
-            >
-              <motion.div variants={fadeUp} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/60 backdrop-blur-md border border-indigo-100 shadow-sm text-indigo-700 text-sm font-semibold">
-                <SparklesIcon className="w-4 h-4 text-amber-400" /> Bêta Privée - 15 Extractions Offertes
-              </motion.div>
+        {/* Aurora WebGL background */}
+        <div className="absolute inset-0 z-0">
+          <Aurora
+            colorStops={["#1D9E75", "#047a55", "#0a3d2d"]}
+            amplitude={1.3}
+            blend={0.65}
+            speed={0.6}
+          />
+        </div>
 
-              <motion.h1 variants={fadeUp} className="text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[1.1]">
-                Votre saisie comptable, <br />
-                <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 via-blue-500 to-cyan-500">
-                  automatisée par l'IA.
-                </span>
-              </motion.h1>
+        {/* Gradient overlays for depth and readability */}
+        <div className="absolute inset-0 z-[1] bg-gradient-to-b from-white/70 via-white/30 to-white/90 dark:from-[#060d09]/75 dark:via-[#060d09]/40 dark:to-[#060d09]" />
+        <div className="absolute inset-0 z-[1] bg-[radial-gradient(ellipse_80%_50%_at_50%_60%,transparent,white_90%)] dark:bg-[radial-gradient(ellipse_80%_50%_at_50%_60%,transparent,#060d09_90%)]" />
 
-              <motion.p variants={fadeUp} className="text-lg text-slate-500 max-w-xl mx-auto lg:mx-0 leading-relaxed font-medium">
-                Fiduciaire Atlas utilise Gemini 2.5 pour lire, comprendre et structurer vos factures et relevés en quelques secondes. Fini les saisies manuelles interminables.
-              </motion.p>
+        {/* Grid pattern */}
+        <div className="absolute inset-0 z-[2] bg-[linear-gradient(to_right,#1D9E7508_1px,transparent_1px),linear-gradient(to_bottom,#1D9E7508_1px,transparent_1px)] bg-[size:5rem_5rem] [mask-image:radial-gradient(ellipse_70%_60%_at_50%_40%,#000_40%,transparent_100%)]" />
 
-              <motion.div variants={fadeUp} className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 pt-4">
-                <Link href="/dashboard">
-                  <Button size="lg" className="bg-gradient-to-r from-indigo-600 to-blue-500 hover:from-indigo-700 hover:to-blue-600 text-white rounded-full h-14 px-8 text-lg shadow-[0_8px_30px_rgb(79,70,229,0.3)] transition-all hover:scale-105">
-                    Essayer la Bêta gratuite
-                  </Button>
-                </Link>
-                {/* BOUTON CONTACT AU LIEU DE DÉMO */}
-                <Button 
-                  size="lg" 
-                  variant="ghost" 
-                  onClick={scrollToContact}
-                  className="rounded-full h-14 px-8 text-lg font-semibold text-slate-600 hover:bg-slate-100 transition-all"
-                >
-                  Nous contacter <MailIcon className="w-5 h-5 ml-2 text-indigo-500" />
-                </Button>
-              </motion.div>
-            </motion.div>
+        {/* Hero content */}
+        <div className="relative z-10 text-center px-4 sm:px-6 max-w-5xl mx-auto w-full">
 
-            {/* PARTIE DROITE : COMPOSANT REACTBITS SANS LE FOND */}
-            <motion.div
-              variants={floatingAnim} animate="animate"
-              // ON GARDE TES MODIFICATIONS DE MARGE : -mt-40 lg:-mt-70
-              className="relative w-full h-[400px] sm:h-[500px] lg:h-[600px] flex items-center justify-center perspective-[1000px] -mt-40 lg:-mt-70"
-            >
-
-              <CardSwap
-                width={650}
-                height={450}
-                cardDistance={45}
-                verticalDistance={55}
-                delay={4000}
-                pauseOnHover={true}
-              >
-                {/* CAPTURE D'ÉCRAN 1 */}
-                <Card className="p-0 overflow-hidden border-[6px] border-white/90 shadow-[0_20px_60px_rgb(0,0,0,0.15)] rounded-2xl bg-slate-100 flex items-center justify-center">
-                  <img src="/dashboard-shot-1.png" alt="Dashboard" className="w-full h-full object-cover object-left-top" />
-                </Card>
-
-                {/* CAPTURE D'ÉCRAN 2 */}
-                <Card className="p-0 overflow-hidden border-[6px] border-white/90 shadow-[0_20px_60px_rgb(0,0,0,0.15)] rounded-2xl bg-slate-100 flex items-center justify-center">
-                  <img src="/dashboard-shot-2.png" alt="Extraction IA" className="w-full h-full object-cover object-left-top" />
-                </Card>
-
-                {/* CAPTURE D'ÉCRAN 3 */}
-                <Card className="p-0 overflow-hidden border-[6px] border-white/90 shadow-[0_20px_60px_rgb(0,0,0,0.15)] rounded-2xl bg-slate-100 flex items-center justify-center">
-                  <img src="/dashboard-shot-3.png" alt="Exportation" className="w-full h-full object-cover object-left-top" />
-                </Card>
-              </CardSwap>
-
-              {/* LE BADGE VERT */}
-              <motion.div animate={{ y: [-10, 10, -10], rotate: [0, 5, 0] }} transition={{ duration: 4, repeat: Infinity }} className="absolute top-28 left-0 lg:-left-4 bg-white/80 backdrop-blur-md p-3 sm:p-4 rounded-2xl shadow-xl border border-white flex items-center gap-3 z-10">
-                <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center"><CheckCircle2Icon className="w-5 h-5 text-emerald-600" /></div>
-                <div className="space-y-1"><div className="h-2 w-12 bg-slate-200 rounded-full"></div><div className="h-2 w-8 bg-slate-200 rounded-full"></div></div>
-              </motion.div>
-
-              {/* LE BADGE VIOLET */}
-              <motion.div animate={{ y: [10, -10, 10], rotate: [0, -5, 0] }} transition={{ duration: 5, repeat: Infinity }} className="absolute bottom-16 right-0 lg:-right-4 bg-white/80 backdrop-blur-md p-3 sm:p-4 rounded-2xl shadow-xl border border-white flex items-center gap-3 z-10">
-                <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center"><SparklesIcon className="w-5 h-5 text-indigo-600" /></div>
-                <div className="space-y-1"><div className="h-2 w-16 bg-slate-200 rounded-full"></div><div className="h-2 w-10 bg-slate-200 rounded-full"></div></div>
-              </motion.div>
-
-            </motion.div>
-
+          {/* Beta badge */}
+          <div className="anim-badge flex justify-center mb-8" style={{ opacity: 0 }}>
+            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#1D9E75]/10 dark:bg-[#1D9E75]/15 border border-[#1D9E75]/30 text-[#1D9E75] dark:text-[#4ecba0] text-sm font-semibold backdrop-blur-sm shadow-sm shadow-[#1D9E75]/20">
+              <SparklesIcon className="size-3.5" />
+              Bêta Privée — 15 Extractions Offertes
+            </span>
           </div>
-        </div>
-      </section>
 
-      {/* FEATURES SECTION (GLASSMORPHISM CARDS) */}
-      <section className="py-24 relative z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }}
-            className="text-center mb-16"
-          >
-            <h2 className="text-3xl lg:text-4xl font-extrabold text-slate-900 mb-4">La comptabilité de demain, aujourd'hui.</h2>
-            <p className="text-slate-500 font-medium max-w-2xl mx-auto text-lg">Un flux de travail repensé pour absorber vos pics d'activité sans effort.</p>
-          </motion.div>
+          {/* BlurText headline */}
+          <BlurText
+            text="Votre saisie comptable, automatisée par l'IA."
+            delay={90}
+            animateBy="words"
+            direction="top"
+            stepDuration={0.4}
+            onAnimationComplete={() => setHeroReady(true)}
+            className="text-4xl sm:text-5xl lg:text-[4.5rem] xl:text-[5rem] font-black tracking-tight leading-[1.05] text-slate-900 dark:text-white justify-center mb-8"
+          />
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {/* Card 1 */}
-            <motion.div
-              initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.1 }}
-              whileHover={{ y: -10, scale: 1.02 }}
-              className="bg-white/60 backdrop-blur-xl rounded-[2rem] p-8 border border-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_40px_rgba(99,102,241,0.1)] transition-all group"
-            >
-              <div className="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mb-6 text-indigo-600 group-hover:scale-110 transition-transform">
-                <BrainCircuitIcon className="w-7 h-7" />
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-3">Modèles d'IA Flexibles</h3>
-              <p className="text-slate-500 leading-relaxed">Passez de l'IA Libre à vos propres structures JSON strictes. L'intelligence artificielle s'adapte à vos normes du cabinet.</p>
-            </motion.div>
-
-            {/* Card 2 */}
-            <motion.div
-              initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.2 }}
-              whileHover={{ y: -10, scale: 1.02 }}
-              className="bg-white/60 backdrop-blur-xl rounded-[2rem] p-8 border border-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_40px_rgba(56,189,248,0.1)] transition-all group"
-            >
-              <div className="w-14 h-14 bg-cyan-50 rounded-2xl flex items-center justify-center mb-6 text-cyan-600 group-hover:scale-110 transition-transform">
-                <ZapIcon className="w-7 h-7" />
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-3">Traitement Asynchrone</h3>
-              <p className="text-slate-500 leading-relaxed">Envoyez 100 factures d'un coup. Notre file d'attente travaille en arrière-plan pendant que vous continuez à naviguer.</p>
-            </motion.div>
-
-            {/* Card 3 */}
-            <motion.div
-              initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.3 }}
-              whileHover={{ y: -10, scale: 1.02 }}
-              className="bg-white/60 backdrop-blur-xl rounded-[2rem] p-8 border border-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-[0_8px_40px_rgba(16,185,129,0.1)] transition-all group"
-            >
-              <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center mb-6 text-emerald-600 group-hover:scale-110 transition-transform">
-                <DownloadIcon className="w-7 h-7" />
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-3">Export Intelligent</h3>
-              <p className="text-slate-500 leading-relaxed">Téléchargez un ZIP complet ou un fichier Excel multi-onglets séparant parfaitement entêtes et lignes de détails.</p>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-      {/* SECTION CONTACT AJOUTÉE */}
-      <section id="contact" className="py-24 relative z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div 
-            initial={{ opacity: 0, y: 50 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ duration: 0.8 }}
-            className="grid lg:grid-cols-2 gap-16 items-start bg-white/40 backdrop-blur-2xl rounded-[3rem] p-8 lg:p-16 border border-white shadow-[0_8px_40px_rgb(0,0,0,0.06)]"
-          >
-            {/* Infos de gauche */}
-            <div className="space-y-8">
-              <div>
-                <h2 className="text-4xl lg:text-5xl font-black tracking-tight mb-6">
-                  Parlons de votre <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-cyan-500">cabinet</span>.
-                </h2>
-                <p className="text-lg text-slate-500 font-medium leading-relaxed">
-                  Vous avez des questions sur la Bêta ou vous souhaitez une démonstration personnalisée pour votre équipe ? Notre équipe technique vous répond sous 24h.
-                </p>
-              </div>
-
-              <div className="space-y-6">
-                <div className="flex items-center gap-4 group">
-                  <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-sm">
-                    <MailIcon className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold uppercase text-slate-400 tracking-wider">Email</p>
-                    <p className="font-bold text-slate-700">contact@atlas-ia.com</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4 group">
-                  <div className="w-12 h-12 rounded-2xl bg-cyan-50 flex items-center justify-center text-cyan-600 group-hover:bg-cyan-600 group-hover:text-white transition-all shadow-sm">
-                    <MapPinIcon className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold uppercase text-slate-400 tracking-wider">Localisation</p>
-                    <p className="font-bold text-slate-700">Casablanca, Maroc</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Formulaire de droite */}
-            <div className="bg-white/80 backdrop-blur-xl rounded-[2rem] p-8 border border-white shadow-xl">
-              <form className="space-y-5">
-                <div className="grid sm:grid-cols-2 gap-5">
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-600 ml-1">Nom complet</label>
-                    <Input placeholder="Jean Dupont" className="rounded-xl border-slate-200 bg-slate-50/50 h-12 focus:ring-indigo-500 transition-shadow" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-600 ml-1">Email pro</label>
-                    <Input type="email" placeholder="jean@cabinet.com" className="rounded-xl border-slate-200 bg-slate-50/50 h-12 transition-shadow" />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-600 ml-1">Sujet</label>
-                  <Input placeholder="Demande d'accès Bêta" className="rounded-xl border-slate-200 bg-slate-50/50 h-12 transition-shadow" />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-slate-600 ml-1">Message</label>
-                  <Textarea placeholder="Comment pouvons-nous vous aider ?" className="rounded-xl border-slate-200 bg-slate-50/50 min-h-[120px] transition-shadow resize-none" />
-                </div>
-                <Button className="w-full bg-gradient-to-r from-indigo-600 to-blue-500 hover:from-indigo-700 hover:to-blue-600 text-white rounded-xl h-12 font-bold shadow-lg shadow-indigo-200 transition-all hover:scale-[1.02] mt-2">
-                  Envoyer le message <SendIcon className="w-4 h-4 ml-2" />
-                </Button>
-              </form>
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* CTA BETA SECTION */}
-      <section className="py-24 relative z-10">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ duration: 0.7 }}
-            className="relative rounded-[3rem] bg-gradient-to-br from-indigo-900 to-slate-900 overflow-hidden shadow-2xl p-12 lg:p-20 text-center"
-          >
-            {/* Effets lumineux dans le fond sombre */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-500/30 via-transparent to-transparent pointer-events-none" />
-
-            <Badge className="bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border-indigo-400/30 px-4 py-1.5 text-sm mb-8">
-              Bêta ouverte aux premiers cabinets
-            </Badge>
-
-            <h2 className="text-4xl lg:text-5xl font-bold text-white mb-6 tracking-tight">
-              Aidez-nous à forger l'outil parfait.
-            </h2>
-
-            <p className="text-lg text-slate-300 max-w-2xl mx-auto mb-10 leading-relaxed">
-              En rejoignant la bêta aujourd'hui, bénéficiez de <strong className="text-white">15 extractions IA offertes</strong>. Testez le système avec vos factures les plus complexes et partagez vos retours.
-            </p>
-
-            <Link href="/dashboard" className="inline-block">
-              <Button size="lg" className="bg-white hover:bg-slate-100 text-indigo-900 rounded-full h-14 px-10 text-lg font-bold shadow-xl hover:scale-105 transition-all">
-                Démarrer mes extractions <ArrowRightIcon className="w-5 h-5 ml-2" />
-              </Button>
-            </Link>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* FOOTER */}
-      <footer className="border-t border-slate-200/50 bg-white/50 backdrop-blur-md relative z-10 py-10 mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="flex items-center gap-2">
-            <div className="bg-indigo-600 p-1.5 rounded-lg">
-              <BrainCircuitIcon className="w-4 h-4 text-white" />
-            </div>
-            <span className="font-bold text-slate-900 tracking-tight">Fiduciaire Atlas</span>
-          </div>
-          <p className="text-slate-500 text-sm font-medium">
-            © {new Date().getFullYear()} Tous droits réservés. Bêta Privée.
+          {/* Subtitle */}
+          <p className="anim-sub text-lg sm:text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed mb-10" style={{ opacity: 0 }}>
+            Hesabi utilise <strong className="text-slate-800 dark:text-slate-200">Gemini 2.5</strong> pour lire, comprendre et structurer vos factures et relevés en quelques secondes. Fini les saisies manuelles interminables.
           </p>
-          <div className="flex gap-6 text-sm font-semibold text-slate-500">
-            <a href="#" className="hover:text-indigo-600 transition-colors">Mentions Légales</a>
-            <button onClick={scrollToContact} className="hover:text-indigo-600 transition-colors">Faire un retour</button>
+
+          {/* CTAs */}
+          <div className="anim-cta flex flex-col sm:flex-row items-center justify-center gap-4" style={{ opacity: 0 }}>
+            <Link href="/register">
+              <button className="group bg-[#1D9E75] hover:bg-[#0F6E56] text-white rounded-full h-14 px-8 text-base font-bold shadow-[0_8px_32px_rgba(29,158,117,0.4)] transition-all hover:scale-105 hover:shadow-[0_12px_40px_rgba(29,158,117,0.5)] cursor-pointer">
+                Essayer la Bêta gratuite
+                <ArrowRightIcon className="inline size-4 ml-2 group-hover:translate-x-1 transition-transform" />
+              </button>
+            </Link>
+            <a href="#contact">
+              <button className="rounded-full h-14 px-8 text-base font-semibold text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-white/10 bg-white/60 dark:bg-white/5 hover:bg-white dark:hover:bg-white/10 backdrop-blur-sm transition-all cursor-pointer">
+                Nous contacter
+              </button>
+            </a>
+          </div>
+
+        </div>
+
+        {/* Bottom fade */}
+        <div className="absolute bottom-0 left-0 right-0 h-32 z-[3] bg-gradient-to-t from-[#f5fbf7] dark:from-[#060d09] to-transparent" />
+      </section>
+
+      {/* ── PRODUCT SCREENSHOT ─────────────────────── */}
+      <section className="product-section relative z-10 pt-4 pb-24">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6">
+
+          {/* Label */}
+          <div className="product-hint text-center mb-10" style={{ opacity: 0 }}>
+            <span className="inline-flex items-center gap-3 text-xs font-semibold text-slate-400 dark:text-slate-600 uppercase tracking-widest">
+              <span className="w-12 h-px bg-gradient-to-r from-transparent to-slate-300 dark:to-slate-700" />
+              Aperçu de la plateforme
+              <span className="w-12 h-px bg-gradient-to-l from-transparent to-slate-300 dark:to-slate-700" />
+            </span>
+          </div>
+
+          {/* Main screenshot — extraction view */}
+          <div
+            className="product-mockup rounded-2xl overflow-hidden border border-slate-200/60 dark:border-white/[0.08] shadow-[0_40px_120px_-20px_rgba(0,0,0,0.22)] dark:shadow-[0_40px_120px_-20px_rgba(0,0,0,0.7)]"
+            style={{ opacity: 0 }}
+          >
+            {/* Browser chrome */}
+            <div className="bg-slate-100/90 dark:bg-[#0d1a11] border-b border-slate-200 dark:border-white/[0.06] px-5 py-3.5 flex items-center gap-4">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-red-400/80" />
+                <div className="w-3 h-3 rounded-full bg-amber-400/80" />
+                <div className="w-3 h-3 rounded-full bg-emerald-400/80" />
+              </div>
+              <div className="flex-1 flex justify-center">
+                <div className="bg-white dark:bg-white/[0.06] rounded-lg h-7 w-72 flex items-center px-3 gap-2 border border-slate-200/60 dark:border-white/[0.06]">
+                  <div className="w-2 h-2 rounded-full bg-[#1D9E75]/60 shrink-0" />
+                  <span className="text-[11px] text-slate-400 dark:text-slate-500">app.hesabi.ma/dashboard/extraction</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Real screenshot */}
+            <div className="relative w-full">
+              <Image
+                src={dark ? "/extraction.png" : "/extraction-white.png"}
+                alt="Hesabi — Interface d'extraction IA"
+                width={2400}
+                height={1400}
+                className="w-full h-auto block"
+                priority
+              />
+            </div>
+          </div>
+
+          {/* Green glow under */}
+          <div className="h-16 -mt-8 blur-[60px] bg-[#1D9E75]/15 rounded-full mx-24 pointer-events-none" />
+
+          {/* Two secondary shots */}
+          <div className="grid grid-cols-2 gap-5 mt-5">
+            {[
+              { src: dark ? "/vue-ensemble.png" : "/vue-ensemble-white.png", alt: "Vue d'ensemble — Portefeuille clients", url: "app.hesabi.ma/dashboard" },
+              { src: dark ? "/models.png" : "/models-white.png", alt: "Atelier des Modèles", url: "app.hesabi.ma/dashboard/models" },
+            ].map(({ src, alt, url }) => (
+              <div key={src} className="rounded-xl overflow-hidden border border-slate-200/60 dark:border-white/[0.07] shadow-lg dark:shadow-black/30">
+                <div className="bg-slate-100/90 dark:bg-[#0d1a11] border-b border-slate-200 dark:border-white/[0.06] px-4 py-2.5 flex items-center gap-3">
+                  <div className="flex gap-1">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-400/70" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-400/70" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-400/70" />
+                  </div>
+                  <div className="bg-white dark:bg-white/[0.06] rounded h-5 flex-1 max-w-[200px] mx-auto flex items-center px-2 gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-[#1D9E75]/50 shrink-0" />
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate">{url}</span>
+                  </div>
+                </div>
+                <Image
+                  src={src}
+                  alt={alt}
+                  width={1200}
+                  height={800}
+                  className="w-full h-auto block"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── STATS ──────────────────────────────────── */}
+      <section className="py-16 relative z-10">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6">
+          <div className="stats-row grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {STATS.map(({ to, prefix, suffix, label, icon: Icon }) => (
+              <div
+                key={label}
+                className="stat-card text-center p-6 rounded-2xl bg-white dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.06] shadow-sm dark:shadow-none hover:shadow-md dark:hover:border-white/[0.1] transition-all"
+                style={{ opacity: 0 }}
+              >
+                <Icon className="size-5 text-[#1D9E75] mx-auto mb-3" />
+                <p className="text-2xl font-black text-slate-900 dark:text-white tabular-nums">
+                  <CountUp to={to} from={0} prefix={prefix ?? ""} suffix={suffix ?? ""} duration={2} delay={0.3} />
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1.5 leading-snug">{label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── FEATURES ───────────────────────────────── */}
+      <section className="py-24 relative z-10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="section-hdr text-center mb-14" style={{ opacity: 0 }}>
+            <span className="inline-block px-3 py-1 text-xs font-bold uppercase tracking-widest text-[#1D9E75] bg-[#1D9E75]/10 rounded-full border border-[#1D9E75]/20 mb-4">Fonctionnalités</span>
+            <h2 className="text-3xl lg:text-4xl font-extrabold text-slate-900 dark:text-white mb-4">
+              La comptabilité de demain, aujourd'hui.
+            </h2>
+            <p className="text-slate-500 dark:text-slate-400 max-w-xl mx-auto leading-relaxed">
+              Un flux de travail repensé pour absorber vos pics d'activité sans effort.
+            </p>
+          </div>
+
+          <div className="feat-grid grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {FEATURES.map(({ icon: Icon, gradient, iconCls, title, desc }) => (
+              <SpotlightCard
+                key={title}
+                spotlightColor="rgba(29,158,117,0.12)"
+                className={`feat-card p-6 rounded-2xl bg-white dark:bg-white/[0.04] border border-slate-100 dark:border-white/[0.06] shadow-sm hover:shadow-lg dark:hover:border-white/[0.1] hover:border-slate-200 transition-all cursor-default`}
+                style={{ opacity: 0 }}
+              >
+                {/* Subtle gradient bg */}
+                <div className={`absolute inset-0 rounded-2xl bg-gradient-to-br ${gradient} opacity-0 group-hover:opacity-100 transition-opacity`} />
+                <div className={`w-11 h-11 rounded-xl flex items-center justify-center mb-4 ${iconCls}`}>
+                  <Icon className="size-5" />
+                </div>
+                <h3 className="font-bold text-slate-900 dark:text-white mb-2">{title}</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">{desc}</p>
+              </SpotlightCard>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── HOW IT WORKS ───────────────────────────── */}
+      <section className="py-24 relative z-10">
+        {/* Section background */}
+        <div className="absolute inset-0 bg-slate-50/80 dark:bg-white/[0.015]" />
+        <div className="relative max-w-5xl mx-auto px-4 sm:px-6">
+          <div className="section-hdr text-center mb-14" style={{ opacity: 0 }}>
+            <span className="inline-block px-3 py-1 text-xs font-bold uppercase tracking-widest text-[#1D9E75] bg-[#1D9E75]/10 rounded-full border border-[#1D9E75]/20 mb-4">Processus</span>
+            <h2 className="text-3xl lg:text-4xl font-extrabold text-slate-900 dark:text-white mb-4">
+              Comment ça marche ?
+            </h2>
+            <p className="text-slate-500 dark:text-slate-400 max-w-lg mx-auto">
+              3 étapes pour passer de vos documents bruts à des données exploitables.
+            </p>
+          </div>
+
+          <div className="steps-row grid md:grid-cols-3 gap-10 relative">
+            {/* Connector line */}
+            <div className="hidden md:block absolute top-6 left-[calc(16.66%+24px)] right-[calc(16.66%+24px)] h-px bg-gradient-to-r from-transparent via-[#1D9E75]/30 to-transparent z-0" />
+
+            {STEPS.map(({ num, icon: Icon, title, desc }) => (
+              <div key={num} className="step-item relative z-10" style={{ opacity: 0 }}>
+                <div className="flex flex-col items-start md:items-center md:text-center gap-4">
+                  <div className="relative">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#1D9E75] to-teal-500 flex items-center justify-center shadow-lg shadow-[#1D9E75]/30">
+                      <Icon className="size-5 text-white" />
+                    </div>
+                    {/* Glow ring */}
+                    <div className="absolute inset-0 rounded-2xl bg-[#1D9E75]/20 blur-md -z-10 scale-125" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-black text-[#1D9E75] tracking-[0.15em] uppercase mb-1.5">{num}</p>
+                    <h3 className="font-bold text-slate-900 dark:text-white mb-2">{title}</h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed">{desc}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA ────────────────────────────────────── */}
+      <section className="py-20 relative z-10">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6">
+          <div className="cta-box relative rounded-3xl overflow-hidden shadow-2xl" style={{ opacity: 0 }}>
+            {/* Dark gradient background */}
+            <div className="absolute inset-0 bg-gradient-to-br from-[#0d5c44] via-[#0a3d2d] to-[#060d09]" />
+            {/* Aurora-like glow */}
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_0%,rgba(29,158,117,0.35)_0%,transparent_70%)]" />
+            {/* Grid */}
+            <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(29,158,117,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(29,158,117,0.06)_1px,transparent_1px)] bg-[size:3.5rem_3.5rem]" />
+            {/* Border glow */}
+            <div className="absolute inset-0 rounded-3xl border border-[#1D9E75]/25" />
+
+            <div className="relative z-10 p-12 lg:p-16 text-center">
+              <span className="inline-block px-3 py-1 text-xs font-bold uppercase tracking-widest text-[#4ecba0] bg-[#1D9E75]/15 rounded-full border border-[#1D9E75]/30 mb-6">
+                Bêta ouverte aux premiers cabinets
+              </span>
+              <h2 className="text-3xl lg:text-5xl font-bold text-white mb-5 tracking-tight leading-tight">
+                Aidez-nous à forger<br />
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#1D9E75] to-teal-300">
+                  l'outil parfait.
+                </span>
+              </h2>
+              <p className="text-[#a8dcc9] max-w-xl mx-auto mb-10 leading-relaxed">
+                En rejoignant la bêta, bénéficiez de{" "}
+                <strong className="text-white">15 extractions IA offertes</strong>.
+                {" "}Testez avec vos documents les plus complexes.
+              </p>
+              <Link href="/register">
+                <button className="group bg-white hover:bg-[#E1F5EE] text-[#0F6E56] rounded-full h-14 px-10 text-base font-bold shadow-xl transition-all hover:scale-105 hover:shadow-2xl cursor-pointer">
+                  Démarrer mes extractions
+                  <ArrowRightIcon className="inline size-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                </button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── CONTACT ────────────────────────────────── */}
+      <section id="contact" className="py-24 relative z-10">
+        <div className="max-w-2xl mx-auto px-4 sm:px-6">
+          <div className="contact-box rounded-3xl bg-white dark:bg-white/[0.03] border border-slate-200/60 dark:border-white/[0.07] shadow-xl dark:shadow-black/40 overflow-hidden text-center" style={{ opacity: 0 }}>
+            <div className="h-1 w-full bg-gradient-to-r from-[#1D9E75] via-teal-400 to-[#1D9E75]" />
+            <div className="p-10 lg:p-14">
+              <span className="inline-block px-3 py-1 text-xs font-bold uppercase tracking-widest text-[#1D9E75] bg-[#1D9E75]/10 rounded-full border border-[#1D9E75]/20 mb-6">Contact</span>
+              <h2 className="text-3xl lg:text-4xl font-extrabold text-slate-900 dark:text-white mb-4 leading-tight">
+                Parlons de votre <span className="text-[#1D9E75]">cabinet</span>.
+              </h2>
+              <p className="text-slate-500 dark:text-slate-400 mb-10 leading-relaxed max-w-sm mx-auto">
+                Questions sur la Bêta ou démonstration personnalisée ? Notre équipe vous répond sous 24h.
+              </p>
+              <div className="flex justify-center">
+                <a href="mailto:mouadguarraz@gmail.com" className="group flex items-center gap-3 px-7 py-4 rounded-2xl border border-slate-200 dark:border-white/[0.08] bg-slate-50 dark:bg-white/[0.03] hover:border-[#1D9E75]/50 hover:bg-[#1D9E75]/5 transition-all">
+                  <div className="w-10 h-10 rounded-xl bg-[#1D9E75]/10 flex items-center justify-center text-[#1D9E75] group-hover:bg-[#1D9E75] group-hover:text-white transition-all shrink-0">
+                    <MailIcon className="size-4" />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">Email</p>
+                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300 group-hover:text-[#1D9E75] transition-colors">
+                      mouadguarraz@gmail.com
+                    </span>
+                  </div>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FOOTER ─────────────────────────────────── */}
+      <footer className="border-t border-slate-200/60 dark:border-white/[0.06] bg-white/60 dark:bg-white/[0.02] backdrop-blur-md relative z-10 py-10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 flex flex-col md:flex-row justify-between items-center gap-6">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#1D9E75] shadow-md shadow-[#1D9E75]/30">
+              <SparklesIcon className="size-3.5 text-white" />
+            </div>
+            <span className="font-bold text-slate-900 dark:text-white tracking-tight">Hesabi</span>
+          </div>
+          <p className="text-slate-400 dark:text-slate-500 text-sm">
+            © {new Date().getFullYear()} Hesabi. Tous droits réservés. Bêta Privée.
+          </p>
+          <div className="flex gap-6 text-sm font-semibold text-slate-400 dark:text-slate-500">
+            <a href="#contact" className="hover:text-[#1D9E75] transition-colors">Contact</a>
+            <a href="#" className="hover:text-[#1D9E75] transition-colors">Mentions légales</a>
           </div>
         </div>
       </footer>

@@ -80,12 +80,12 @@ export default function ManualCreator() {
             </div>
 
             {/* Zone d'affichage des tags sélectionnés */}
-            <div className="flex flex-wrap gap-2 p-3 bg-gray-50 min-h-[60px] rounded-md border border-dashed border-gray-300">
-              {tags.length === 0 && <span className="text-sm text-gray-400">Aucun tag ajouté.</span>}
+            <div className="flex flex-wrap gap-2 p-3 bg-gray-50 dark:bg-white/[0.04] min-h-[60px] rounded-md border border-dashed border-gray-300 dark:border-white/10">
+              {tags.length === 0 && <span className="text-sm text-gray-400 dark:text-slate-500">Aucun tag ajouté.</span>}
               {tags.map((tag, i) => (
-                <Badge key={i} className="bg-indigo-100 text-indigo-800 hover:bg-indigo-200 border-indigo-200 pr-1 flex items-center">
+                <Badge key={i} className="bg-[#1D9E75]/10 text-[#1D9E75] hover:bg-[#1D9E75]/15 border-[#1D9E75]/20 pr-1 flex items-center">
                   {tag}
-                  <button type="button" onClick={() => removeTag(tag)} className="ml-1 text-indigo-500 hover:text-indigo-900 rounded-full p-0.5">
+                  <button type="button" onClick={() => removeTag(tag)} className="ml-1 text-[#1D9E75]/70 hover:text-[#0F6E56] rounded-full p-0.5">
                     <XIcon className="w-3 h-3" />
                   </button>
                 </Badge>

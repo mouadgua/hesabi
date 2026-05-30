@@ -5,12 +5,22 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { headers } from 'next/headers'
+import { sanitizeEmail, validatePassword } from '@/lib/sanitize'
 
 export async function login(formData) {
   const supabase = await createClient()
 
-  const email = formData.get('email')
+  const email = sanitizeEmail(formData.get('email'))
   const password = formData.get('password')
+
+  if (!email) {
+    return redirect('/login?message=' + encodeURIComponent("Adresse email invalide."))
+  }
+
+  const pwCheck = validatePassword(password)
+  if (!pwCheck.valid) {
+    return redirect('/login?message=' + encodeURIComponent(pwCheck.message))
+  }
 
   const { error } = await supabase.auth.signInWithPassword({
     email,

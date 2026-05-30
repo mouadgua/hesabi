@@ -235,6 +235,9 @@ export default function LandingPage() {
           </div>
           <div className="flex items-center gap-3">
             <a href="#contact" className="hidden md:block text-sm font-semibold text-slate-600 dark:text-slate-400 hover:text-[#1D9E75] dark:hover:text-[#1D9E75] transition-colors">Contact</a>
+            <Link href="/demo" className="hidden md:inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:text-[#1D9E75] dark:hover:text-[#1D9E75] transition-colors">
+              Démo gratuite <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#1D9E75] bg-[#1D9E75]/10 rounded-full border border-[#1D9E75]/20">New</span>
+            </Link>
             <ThemeToggle />
             <Link href="/login">
               <button className="bg-[#1D9E75] hover:bg-[#0F6E56] text-white rounded-full px-5 py-2 text-sm font-semibold shadow-lg shadow-[#1D9E75]/30 transition-all hover:scale-105 cursor-pointer">
@@ -300,9 +303,9 @@ export default function LandingPage() {
                 <ArrowRightIcon className="inline size-4 ml-2 group-hover:translate-x-1 transition-transform" />
               </button>
             </Link>
-            <a href="#contact">
+            <a href="/demo">
               <button className="rounded-full h-14 px-8 text-base font-semibold text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-white/10 bg-white/60 dark:bg-white/5 hover:bg-white dark:hover:bg-white/10 backdrop-blur-sm transition-all cursor-pointer">
-                Nous contacter
+                essayer la demo 
               </button>
             </a>
           </div>

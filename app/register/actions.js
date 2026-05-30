@@ -4,12 +4,25 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import prisma from '@/lib/prisma'
+import { sanitizeName, sanitizeEmail, validatePassword, sanitizeBetaKey } from '@/lib/sanitize'
 
 export async function registerUser(formData) {
-  const nom      = (formData.get('nom') ?? '').trim()
-  const email    = (formData.get('email') ?? '').trim().toLowerCase()
-  const password = (formData.get('password') ?? '').trim()
-  const betaKey  = (formData.get('beta_key') ?? '').trim().toUpperCase()
+  const nom      = sanitizeName(formData.get('nom') ?? '')
+  const email    = sanitizeEmail(formData.get('email') ?? '')
+  const password = formData.get('password') ?? ''
+  const betaKey  = sanitizeBetaKey(formData.get('beta_key') ?? '')
+
+  if (!nom) {
+    redirect('/register?error=' + encodeURIComponent("Nom invalide."))
+  }
+  if (!email) {
+    redirect('/register?error=' + encodeURIComponent("Adresse email invalide."))
+  }
+
+  const pwCheck = validatePassword(password)
+  if (!pwCheck.valid) {
+    redirect('/register?error=' + encodeURIComponent(pwCheck.message))
+  }
 
   // ── 1. Validate beta key ───────────────────────────────────────────────────
   if (!betaKey) {

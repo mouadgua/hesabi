@@ -34,6 +34,7 @@ export async function POST(request) {
 
   const file      = formData.get('file')
   const dossierId = formData.get('dossier_id') || null
+  const clientId  = formData.get('client_id')  || null
 
   if (!file) return NextResponse.json({ error: 'Fichier manquant' }, { status: 400 })
 
@@ -90,7 +91,22 @@ export async function POST(request) {
     }
   }
 
-  const defaultClient = await getOrCreateDefaultClient(utilisateur.cabinet_id)
+  // ── Resolve target client (activeClient from sidebar or default) ─────────
+  let targetClient
+  if (clientId) {
+    if (!/^[0-9a-f-]{36}$/.test(clientId)) {
+      return NextResponse.json({ error: 'client_id invalide.' }, { status: 400 })
+    }
+    const validClient = await prisma.client.findFirst({
+      where: { id: clientId, cabinet_id: utilisateur.cabinet_id },
+    })
+    if (!validClient) {
+      return NextResponse.json({ error: 'Client invalide.' }, { status: 400 })
+    }
+    targetClient = validClient
+  } else {
+    targetClient = await getOrCreateDefaultClient(utilisateur.cabinet_id)
+  }
 
   // ── Upload with UUID filename (no original name in path) ──────────────────
   const uniqueName = `${crypto.randomUUID()}.${ext}`
@@ -106,7 +122,7 @@ export async function POST(request) {
 
   const doc = await prisma.document.create({
     data: {
-      client_id:      defaultClient.id,
+      client_id:      targetClient.id,
       dossier_id:     dossierId,
       nom_fichier:    file.name.slice(0, 255),  // Store original name for display only
       chemin_storage: filePath,

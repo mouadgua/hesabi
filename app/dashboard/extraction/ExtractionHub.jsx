@@ -204,6 +204,8 @@ export default function ExtractionHub({
       fd.append('file', file)
       const dossierId = await getDossierId(file)
       if (dossierId) fd.append('dossier_id', dossierId)
+      // Attach to active client so docs stay visible in filtered view after reload
+      if (activeClient?.id) fd.append('client_id', activeClient.id)
 
       let success = false
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {

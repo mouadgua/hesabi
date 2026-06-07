@@ -1,133 +1,123 @@
 import prisma from '@/lib/prisma'
 import { NextResponse } from 'next/server'
+import { createClient } from '@/utils/supabase/server'
 import * as XLSX from 'xlsx'
 
 export async function POST(request) {
   try {
-    const formData = await request.formData()
-    const documentIds = formData.getAll('documentIds')
-    const requestedColumns = JSON.parse(formData.get('columns') || "[]")
-    const format = formData.get('format') || 'csv'
+    // ── Auth ─────────────────────────────────────────────────────────────────
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return new NextResponse('Non autorisé', { status: 401 })
 
-    if (!documentIds || documentIds.length === 0) {
-      return new NextResponse("Aucun document sélectionné.", { status: 400 })
-    }
-
-    const documents = await prisma.document.findMany({
-      where: { id: { in: documentIds } }
+    const utilisateur = await prisma.utilisateur.findUnique({
+      where: { id: user.id }, select: { cabinet_id: true }
     })
+    if (!utilisateur?.cabinet_id) return new NextResponse('Cabinet introuvable', { status: 403 })
 
-    if (documents.length === 0) return new NextResponse("Documents introuvables.", { status: 404 })
+    // ── Parse input ───────────────────────────────────────────────────────────
+    const formData = await request.formData()
+    const rawIds = formData.getAll('documentIds')
+    const format  = formData.get('format') || 'csv'
 
-    const mainHeaders = ['Nom du Fichier', 'Date d\'import', 'Statut', ...requestedColumns.map(c => c.replace(/_/g, ' ').toUpperCase())]
-    const mainRows = []
-    
-    // Pour stocker toutes les lignes complexes trouvées (ex: les relevés bancaires)
+    // Sanitize documentIds — UUID format only
+    const documentIds = rawIds.filter(id => typeof id === 'string' && /^[0-9a-f-]{36}$/.test(id))
+    if (documentIds.length === 0) return new NextResponse('Aucun document sélectionné.', { status: 400 })
+
+    // Sanitize columns — only allow snake_case keys, max 30 columns
+    let requestedColumns = []
+    try {
+      const parsed = JSON.parse(formData.get('columns') || '[]')
+      requestedColumns = Array.isArray(parsed)
+        ? parsed.filter(c => typeof c === 'string' && /^[a-z_]{1,50}$/.test(c)).slice(0, 30)
+        : []
+    } catch { /* fallback to empty */ }
+
+    // ── Fetch documents — scoped to cabinet (IDOR prevention) ─────────────────
+    const documents = await prisma.document.findMany({
+      where: { id: { in: documentIds }, client: { cabinet_id: utilisateur.cabinet_id } }
+    })
+    if (documents.length === 0) return new NextResponse('Documents introuvables.', { status: 404 })
+
+    // ── Build rows ────────────────────────────────────────────────────────────
+    const mainHeaders = [
+      'Nom du Fichier', "Date d'import", 'Statut',
+      ...requestedColumns.map(c => c.replace(/_/g, ' ').toUpperCase()),
+    ]
+    const mainRows    = []
     const detailedLines = []
 
-    documents.forEach(doc => {
+    for (const doc of documents) {
       const data = doc.donnees_extraites || {}
-      const row = [
+      const row  = [
         doc.nom_fichier || doc.id,
         new Date(doc.createdAt).toLocaleDateString('fr-FR'),
-        doc.statut
+        doc.statut,
       ]
 
-      requestedColumns.forEach(col => {
+      for (const col of requestedColumns) {
         let val = data[col]
 
-        // --- LA MAGIE EST ICI ---
-        // Si c'est du texte qui ressemble à un tableau JSON "[...]", on le parse pour le re-transformer en vrai tableau !
         if (typeof val === 'string' && val.trim().startsWith('[') && val.trim().endsWith(']')) {
-          try {
-            val = JSON.parse(val)
-          } catch (e) {
-            // Si la conversion échoue (JSON mal formaté par l'utilisateur), ça reste du texte.
-          }
+          try { val = JSON.parse(val) } catch { /* keep as string */ }
         }
-        // ------------------------
 
-        // SI LA VALEUR EST UN VRAI TABLEAU D'OBJETS
         if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object') {
-          // On extrait chaque ligne et on y attache le nom du fichier
-          val.forEach(item => {
-            detailedLines.push({
-              "FICHIER SOURCE": doc.nom_fichier || doc.id,
-              "TYPE LIGNE": col.toUpperCase(),
-              ...item
-            })
-          })
-          row.push("[Voir onglet Détails]")
-        } 
-        else {
-          if (val === null || val === undefined) val = ""
+          val.forEach(item => detailedLines.push({
+            'FICHIER SOURCE': doc.nom_fichier || doc.id,
+            'TYPE LIGNE':     col.toUpperCase(),
+            ...item,
+          }))
+          row.push('[Voir onglet Détails]')
+        } else {
+          if (val === null || val === undefined) val = ''
           if (typeof val === 'object') val = JSON.stringify(val)
           row.push(val)
         }
-      })
-
+      }
       mainRows.push(row)
-    })
+    }
 
-    // ==========================================
-    // 2. GÉNÉRATION EXCEL MULTI-ONGLETS (.xlsx)
-    // ==========================================
+    // ── Excel ─────────────────────────────────────────────────────────────────
     if (format === 'excel') {
-      const workbook = XLSX.utils.book_new()
+      const wb = XLSX.utils.book_new()
 
-      // ONGLET 1 : Données principales
-      const mainWorksheetData = [mainHeaders, ...mainRows]
-      const mainWorksheet = XLSX.utils.aoa_to_sheet(mainWorksheetData)
-      mainWorksheet['!cols'] = mainHeaders.map(h => ({ wch: Math.max(20, h.length + 5) }))
-      XLSX.utils.book_append_sheet(workbook, mainWorksheet, "Données Générales")
+      const mainWs = XLSX.utils.aoa_to_sheet([mainHeaders, ...mainRows])
+      mainWs['!cols'] = mainHeaders.map(h => ({ wch: Math.max(20, h.length + 5) }))
+      XLSX.utils.book_append_sheet(wb, mainWs, 'Données Générales')
 
-      // ONGLET 2 : Détails (Les lignes du relevé)
       if (detailedLines.length > 0) {
-        const detailKeys = new Set()
-        detailedLines.forEach(line => Object.keys(line).forEach(k => detailKeys.add(k)))
-        const detailHeaders = Array.from(detailKeys)
-
-        const detailRows = detailedLines.map(line => detailHeaders.map(header => line[header] || ""))
-        
-        const detailWorksheetData = [detailHeaders.map(h => h.replace(/_/g, ' ').toUpperCase()), ...detailRows]
-        const detailWorksheet = XLSX.utils.aoa_to_sheet(detailWorksheetData)
-        detailWorksheet['!cols'] = detailHeaders.map(h => ({ wch: Math.max(15, h.length + 5) }))
-        XLSX.utils.book_append_sheet(workbook, detailWorksheet, "Lignes Détaillées")
+        const detailKeys    = [...new Set(detailedLines.flatMap(l => Object.keys(l)))]
+        const detailHeaders = detailKeys
+        const detailRows    = detailedLines.map(l => detailHeaders.map(k => l[k] ?? ''))
+        const detailWs      = XLSX.utils.aoa_to_sheet([detailHeaders.map(h => h.replace(/_/g, ' ').toUpperCase()), ...detailRows])
+        detailWs['!cols']   = detailHeaders.map(h => ({ wch: Math.max(15, h.length + 5) }))
+        XLSX.utils.book_append_sheet(wb, detailWs, 'Lignes Détaillées')
       }
 
-      const excelBuffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' })
-      return new NextResponse(excelBuffer, {
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+      return new NextResponse(buf, {
         headers: {
-          'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'Content-Type':        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           'Content-Disposition': 'attachment; filename="Export_Comptable.xlsx"',
-        }
-      })
-    } 
-    
-    // ==========================================
-    // 3. GÉNÉRATION CSV (.csv)
-    // ==========================================
-    else {
-      const lignesCsv = []
-      lignesCsv.push(mainHeaders.map(h => `"${h}"`).join(';'))
-
-      mainRows.forEach(row => {
-        lignesCsv.push(row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(';'))
-      })
-
-      const BOM = "\uFEFF"
-      const csvContent = BOM + lignesCsv.join('\n')
-
-      return new NextResponse(csvContent, {
-        headers: {
-          'Content-Type': 'text/csv; charset=utf-8',
-          'Content-Disposition': 'attachment; filename="Export_Comptable.csv"',
-        }
+        },
       })
     }
 
-  } catch (error) {
-    console.error("Erreur lors de l'export :", error)
+    // ── CSV ───────────────────────────────────────────────────────────────────
+    const lines = [mainHeaders.map(h => `"${h}"`).join(';')]
+    mainRows.forEach(row => {
+      lines.push(row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(';'))
+    })
+    return new NextResponse('﻿' + lines.join('\n'), {
+      headers: {
+        'Content-Type':        'text/csv; charset=utf-8',
+        'Content-Disposition': 'attachment; filename="Export_Comptable.csv"',
+      },
+    })
+
+  } catch (err) {
+    console.error("Erreur export:", err)
     return new NextResponse("Erreur serveur lors de l'export.", { status: 500 })
   }
 }

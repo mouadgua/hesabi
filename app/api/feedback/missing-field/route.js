@@ -1,6 +1,9 @@
 import prisma from '@/lib/prisma'
 import { createClient } from '@/utils/supabase/server'
 import { NextResponse } from 'next/server'
+import { sanitizeText } from '@/lib/sanitize'
+
+const VALID_DOC_TYPES = new Set(['facture', 'releve_bancaire', 'bon_commande', 'recu', 'autre'])
 
 export async function POST(request) {
   try {
@@ -8,24 +11,34 @@ export async function POST(request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
 
-    const { document_type, field_name, document_id } = await request.json()
+    let body
+    try { body = await request.json() }
+    catch { return NextResponse.json({ error: 'Corps invalide' }, { status: 400 }) }
 
-    if (!field_name) {
+    const { document_type, field_name, document_id } = body
+
+    // ── Sanitize ──────────────────────────────────────────────────────────────
+    const cleanFieldName  = sanitizeText(field_name,   50)
+    const cleanDocType    = VALID_DOC_TYPES.has(document_type) ? document_type : 'autre'
+    const cleanDocumentId = typeof document_id === 'string' && /^[0-9a-f-]{36}$/.test(document_id)
+      ? document_id : null
+
+    if (!cleanFieldName) {
       return NextResponse.json({ error: 'Nom du champ requis' }, { status: 400 })
     }
 
     await prisma.missingFieldRequest.create({
       data: {
-        user_id: user.id,
-        document_type: document_type || 'autre',
-        field_name: field_name.trim(),
-        document_id: document_id ?? null,
+        user_id:       user.id,
+        document_type: cleanDocType,
+        field_name:    cleanFieldName,
+        document_id:   cleanDocumentId,
       },
     })
 
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('Missing field feedback error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return NextResponse.json({ error: 'Erreur serveur.' }, { status: 500 })
   }
 }

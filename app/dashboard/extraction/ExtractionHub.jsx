@@ -17,18 +17,21 @@ import {
 } from "@/components/ui/alert-dialog"
 import {
   UploadCloudIcon, FileTextIcon, ImageIcon, Loader2Icon, SparklesIcon,
-  FolderOpenIcon, Trash2Icon, ChevronRightIcon, AlertCircleIcon,
+  Trash2Icon, ChevronRightIcon, AlertCircleIcon,
   CheckCircle2Icon, ClockIcon, FolderIcon, AlertTriangleIcon,
+  CreditCardIcon, WifiOffIcon, ShieldAlertIcon, UsersIcon, XIcon,
+  SearchIcon, FilterXIcon,
 } from "lucide-react"
 import { FirstVisitHint } from "@/components/first-visit-hint"
 import AIErrorModal, { getAIErrorCode } from "@/components/ai-error-modal"
 
-// ── Constants ────────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-const ACCEPTED_EXTS = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic']
-const ACCEPT_ATTR = '.pdf,.jpg,.jpeg,.png,.webp,.heic'
+const ACCEPTED_EXTS  = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic']
+const ACCEPT_ATTR    = '.pdf,.jpg,.jpeg,.png,.webp,.heic'
+const MAX_RETRIES    = 2
 
-// ── Status badge ─────────────────────────────────────────────────────────────
+// ── Status badge ──────────────────────────────────────────────────────────────
 
 const STATUS_CFG = {
   A_EXTRAIRE:  { label: 'En attente',  cn: 'bg-slate-100 dark:bg-white/[0.06] text-slate-600 dark:text-slate-400 border-slate-200 dark:border-white/10',                   Icon: ClockIcon,        spin: false },
@@ -54,9 +57,32 @@ function DocFileIcon({ filename }) {
   return <ImageIcon className="w-4 h-4 text-blue-400 shrink-0" />
 }
 
-// ── Main component ───────────────────────────────────────────────────────────
+// ── Confidence badge (fiabilité IA) ───────────────────────────────────────────
 
-export default function ExtractionHub({ initialDocuments, templates, credits: initialCredits }) {
+function ConfidenceBadge({ confidence }) {
+  if (confidence == null) return null
+  if (confidence >= 0.75) return null // bon score → pas besoin d'alerter
+  const low = confidence < 0.5
+  return (
+    <span title={`Fiabilité IA : ${Math.round(confidence * 100)}%`}
+      className={`hidden md:inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border font-medium shrink-0
+        ${low
+          ? 'bg-red-50 dark:bg-red-500/10 border-red-200 dark:border-red-500/20 text-red-600 dark:text-red-400'
+          : 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-400'
+        }`}
+    >
+      <AlertTriangleIcon className="w-2.5 h-2.5 shrink-0" />
+      {Math.round(confidence * 100)}%
+    </span>
+  )
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
+
+export default function ExtractionHub({
+  initialDocuments, templates, credits: initialCredits, activeClient,
+  initialSearch = '', initialStatut = '', initialType = '',
+}) {
   const router = useRouter()
   const [docs, setDocs] = useState(initialDocuments)
   const [credits, setCredits] = useState(initialCredits)
@@ -65,8 +91,15 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
   const [uploadProgress, setUploadProgress] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
-  const [aiError, setAiError] = useState(null) // { code, filename, docId }
+  const [aiError, setAiError] = useState(null)
+  const [isIOS, setIsIOS] = useState(false)
   const [, startTransition] = useTransition()
+
+  // ── Search & filter state ─────────────────────────────────────────────────
+  const [query,        setQuery]        = useState(initialSearch)
+  const [statutFilter, setStatutFilter] = useState(initialStatut)
+  const [typeFilter,   setTypeFilter]   = useState(initialType)
+
   const dragCounter = useRef(0)
   const singleRef = useRef(null)
   const multipleRef = useRef(null)
@@ -75,7 +108,26 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
   useEffect(() => { setDocs(initialDocuments) }, [initialDocuments])
   useEffect(() => { setCredits(initialCredits) }, [initialCredits])
 
-  // ── Supabase Realtime — listen to all Document updates ────────────────────
+  // ── Sync filters to URL (debounced 300ms for text) ────────────────────────
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const p = new URLSearchParams()
+      if (activeClient?.id) p.set('client', activeClient.id)
+      if (query)            p.set('q',      query)
+      if (statutFilter)     p.set('statut', statutFilter)
+      if (typeFilter)       p.set('type',   typeFilter)
+      const qs = p.toString()
+      router.replace(qs ? `/dashboard/extraction?${qs}` : '/dashboard/extraction', { scroll: false })
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [query, statutFilter, typeFilter])
+
+  // ── iOS / mobile detection (folder upload not supported on iOS) ───────────
+  useEffect(() => {
+    setIsIOS(/iPhone|iPad|iPod/i.test(navigator.userAgent))
+  }, [])
+
+  // ── Supabase Realtime — listen to Document updates ────────────────────────
 
   useEffect(() => {
     const supabase = createBrowserSupabase()
@@ -86,7 +138,13 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
       }, ({ new: updated }) => {
         setDocs(prev => prev.map(d =>
           d.id === updated.id
-            ? { ...d, statut: updated.statut, document_type: updated.document_type ?? d.document_type, error_message: updated.error_message ?? d.error_message }
+            ? {
+                ...d,
+                statut:        updated.statut,
+                document_type: updated.document_type ?? d.document_type,
+                confidence:    updated.document_type_confidence ?? d.confidence,
+                error_message: updated.error_message ?? d.error_message,
+              }
             : d
         ))
         if (updated.statut === 'REJETE') {
@@ -101,9 +159,7 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
     return () => supabase.removeChannel(channel)
   }, [])
 
-  // ── Polling fallback — refresh server data while docs are processing ───────
-  // Fires router.refresh() every 4s when any doc is EN_COURS_IA so the
-  // server-side status propagates even if Supabase Realtime isn't active.
+  // ── Polling while processing ───────────────────────────────────────────────
 
   useEffect(() => {
     const hasProcessing = docs.some(d => d.statut === 'EN_COURS_IA')
@@ -121,7 +177,7 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
     for (const file of fileList) {
       const ext = file.name.split('.').pop().toLowerCase()
       if (!ACCEPTED_EXTS.includes(ext)) {
-        toast.error(`Format non supporté : ${file.name}. Seuls les PDF et images sont acceptés.`)
+        toast.error(`Format non supporté : ${file.name}`)
       } else {
         valid.push(file)
       }
@@ -129,7 +185,15 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
     return valid
   }
 
-  // ── Core upload (sequential, progress bar) ───────────────────────────────
+  // ── Duplicate detection ───────────────────────────────────────────────────
+
+  function findDuplicates(files) {
+    return files.filter(f =>
+      docs.some(d => d.nom_fichier === f.name && !['REJETE'].includes(d.statut))
+    )
+  }
+
+  // ── Core upload with retry ────────────────────────────────────────────────
 
   async function uploadSequential(files, getDossierId = () => null) {
     setUploadProgress({ current: 0, total: files.length })
@@ -141,34 +205,55 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
       const dossierId = await getDossierId(file)
       if (dossierId) fd.append('dossier_id', dossierId)
 
-      try {
-        const res = await fetch('/api/upload', { method: 'POST', body: fd })
-        const data = await res.json()
-        if (res.ok) {
-          uploaded.push({
-            id: data.documentId,
-            nom_fichier: file.name,
-            statut: 'A_EXTRAIRE',
-            document_type: null,
-            dossier_id: dossierId,
-            dossier_nom: null,
-            error_message: null,
-            createdAt: new Date().toISOString(),
-          })
-        } else {
-          toast.error(data.error ?? `Échec : ${file.name}`)
+      let success = false
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        if (attempt > 0) {
+          await new Promise(r => setTimeout(r, 800 * attempt))
         }
-      } catch {
-        toast.error(`Connexion perdue pour ${file.name}`)
+        try {
+          const res = await fetch('/api/upload', { method: 'POST', body: fd })
+          const data = await res.json()
+          if (res.ok) {
+            uploaded.push({
+              id:            data.documentId,
+              nom_fichier:   file.name,
+              statut:        'A_EXTRAIRE',
+              document_type: null,
+              confidence:    null,
+              dossier_id:    dossierId,
+              dossier_nom:   null,
+              error_message: null,
+              createdAt:     new Date().toISOString(),
+            })
+            success = true
+            break
+          } else if (res.status === 400 && data.error?.includes('Crédits')) {
+            toast.error(data.error, {
+              action: { label: 'Voir les plans', onClick: () => router.push('/dashboard/settings/billing') }
+            })
+            success = true // don't retry credit errors
+            break
+          } else {
+            if (attempt === MAX_RETRIES) toast.error(data.error ?? `Échec : ${file.name}`)
+          }
+        } catch {
+          if (attempt === MAX_RETRIES) {
+            toast.error(`Connexion perdue pour ${file.name}. Vérifiez votre connexion internet.`, {
+              action: { label: 'Réessayer', onClick: () => handleFiles([file]) }
+            })
+          }
+        }
       }
+
       setUploadProgress(p => ({ ...p, current: p.current + 1 }))
+      if (!success) continue
     }
 
     setUploadProgress(null)
     if (uploaded.length > 0) {
       setDocs(prev => [...uploaded, ...prev])
       setCredits(c => c - uploaded.length)
-      toast.success(`${uploaded.length} fichier${uploaded.length > 1 ? 's' : ''} uploadé${uploaded.length > 1 ? 's' : ''}.`)
+      toast.success(`${uploaded.length} fichier${uploaded.length > 1 ? 's uploadés' : ' uploadé'}.`)
     }
   }
 
@@ -177,6 +262,14 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
   async function handleFiles(rawFiles) {
     const valid = validateFiles(rawFiles)
     if (valid.length === 0) return
+
+    // Duplicate detection
+    const dupes = findDuplicates(valid)
+    if (dupes.length > 0) {
+      const names = dupes.map(f => f.name).join(', ')
+      toast.warning(`Fichier déjà présent : ${names}. L'upload continuera quand même.`)
+    }
+
     await uploadSequential(valid)
   }
 
@@ -195,8 +288,8 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
     const pathToId = {}
     const toastId = toast.loading('Création de la structure de dossiers…')
     for (const path of uniquePaths) {
-      const parts = path.split('/')
-      const name = parts[parts.length - 1]
+      const parts    = path.split('/')
+      const name     = parts[parts.length - 1]
       const parentPath = parts.slice(0, -1).join('/')
       const parentId = parentPath ? pathToId[parentPath] : null
       try {
@@ -222,43 +315,63 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
 
   function onDragEnter(e) { e.preventDefault(); dragCounter.current++; setIsDragging(true) }
   function onDragLeave(e) { e.preventDefault(); if (--dragCounter.current === 0) setIsDragging(false) }
-  function onDragOver(e) { e.preventDefault() }
+  function onDragOver(e)  { e.preventDefault() }
   function onDrop(e) {
     e.preventDefault(); dragCounter.current = 0; setIsDragging(false)
+    if (credits <= 0) { toast.error("Crédits épuisés. Rechargez votre compte pour uploader."); return }
     handleFiles([...e.dataTransfer.files])
+  }
+
+  // ── Filtered docs (search + status + type) ───────────────────────────────
+
+  const filteredDocs = docs.filter(doc => {
+    if (query) {
+      const q = query.toLowerCase()
+      const inName     = doc.nom_fichier?.toLowerCase().includes(q)
+      const inSupplier = doc.fournisseur?.toLowerCase().includes(q)
+      const inFolder   = doc.dossier_nom?.toLowerCase().includes(q)
+      if (!inName && !inSupplier && !inFolder) return false
+    }
+    if (statutFilter && doc.statut !== statutFilter) return false
+    if (typeFilter   && doc.document_type !== typeFilter) return false
+    return true
+  })
+
+  const hasActiveFilter = query || statutFilter || typeFilter
+
+  function clearFilters() {
+    setQuery('')
+    setStatutFilter('')
+    setTypeFilter('')
   }
 
   // ── Selection & extraction ────────────────────────────────────────────────
 
-  const extractableDocs = docs.filter(d => d.statut === 'A_EXTRAIRE')
-  const allSelected = extractableDocs.length > 0 && extractableDocs.every(d => selectedDocIds.has(d.id))
+  const extractableDocs = filteredDocs.filter(d => d.statut === 'A_EXTRAIRE')
+  const allSelected     = extractableDocs.length > 0 && extractableDocs.every(d => selectedDocIds.has(d.id))
 
   function toggleSelectAll() {
     setSelectedDocIds(allSelected ? new Set() : new Set(extractableDocs.map(d => d.id)))
   }
-
   function toggleDoc(id) {
-    setSelectedDocIds(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
+    setSelectedDocIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
   }
 
   function handleExtract() {
     if (selectedDocIds.size === 0) { toast.error("Sélectionnez au moins un fichier à extraire."); return }
     const ids = [...selectedDocIds]
-    const fd = new FormData()
+    const fd  = new FormData()
     fd.append('template_id', templateId)
     ids.forEach(id => fd.append('documentIds', id))
 
     setDocs(prev => prev.map(d => ids.includes(d.id) ? { ...d, statut: 'EN_COURS_IA' } : d))
     setSelectedDocIds(new Set())
 
+    toast.info('Extraction lancée. Vous pouvez fermer cet onglet — le traitement continue en arrière-plan.', { duration: 5000 })
+
     startTransition(async () => {
       try {
         await extractDocumentsAction(fd)
-        toast.success(`Extraction lancée pour ${ids.length} document${ids.length > 1 ? 's' : ''}.`)
       } catch (err) {
         toast.error(err.message ?? "Erreur lors du lancement de l'extraction.")
         setDocs(prev => prev.map(d => ids.includes(d.id) ? { ...d, statut: 'A_EXTRAIRE' } : d))
@@ -289,13 +402,15 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
 
   // ── Render ────────────────────────────────────────────────────────────────
 
+  const uploadDisabled = credits <= 0
+
   return (
     <div
       className="min-h-[calc(100vh-60px)] relative"
-      onDragEnter={onDragEnter}
-      onDragLeave={onDragLeave}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
+      onDragEnter={!uploadDisabled ? onDragEnter : undefined}
+      onDragLeave={!uploadDisabled ? onDragLeave : undefined}
+      onDragOver={!uploadDisabled ? onDragOver : undefined}
+      onDrop={!uploadDisabled ? onDrop : undefined}
     >
       {/* Drag overlay */}
       {isDragging && (
@@ -311,9 +426,23 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
         {/* ── Page header ── */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Extraction</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Extraction</h1>
+              {activeClient && (
+                <Link
+                  href="/dashboard/extraction"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#1D9E75]/10 border border-[#1D9E75]/20 text-xs font-medium text-[#085041] dark:text-[#1D9E75] hover:bg-[#1D9E75]/20 transition-colors"
+                >
+                  <UsersIcon className="w-3 h-3" />
+                  {activeClient.nom}
+                  <XIcon className="w-3 h-3 opacity-60" />
+                </Link>
+              )}
+            </div>
             <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-              Déposez vos documents et lancez l'extraction IA en lot
+              {activeClient
+                ? `Documents de ${activeClient.nom}`
+                : 'Déposez vos documents et lancez l\'extraction IA en lot'}
             </p>
           </div>
           <div className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border text-sm font-medium self-start
@@ -328,11 +457,45 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
           </div>
         </div>
 
+        {/* ── Banner quota épuisé ── */}
+        {credits <= 0 && (
+          <div className="flex items-center gap-4 px-4 py-3.5 bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl text-sm">
+            <ShieldAlertIcon className="w-5 h-5 text-red-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-red-700 dark:text-red-400">Quota épuisé</p>
+              <p className="text-red-600/80 dark:text-red-400/70 text-xs mt-0.5">
+                Vous avez utilisé toutes vos extractions bêta. Passez à un plan pour continuer.
+              </p>
+            </div>
+            <Link href="/dashboard/settings/billing">
+              <Button size="sm" className="shrink-0 bg-red-600 hover:bg-red-700 text-white gap-1.5 text-xs">
+                <CreditCardIcon className="w-3.5 h-3.5" />
+                Voir les plans
+              </Button>
+            </Link>
+          </div>
+        )}
+
+        {/* ── Low credits warning ── */}
+        {credits > 0 && credits <= 2 && (
+          <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl text-xs text-amber-700 dark:text-amber-400">
+            <AlertTriangleIcon className="w-4 h-4 shrink-0" />
+            <span>Il ne vous reste que <strong>{credits} extraction{credits > 1 ? 's' : ''}</strong>. Chaque upload décompte 1 crédit.</span>
+          </div>
+        )}
+
         {/* ── Upload zone ── */}
-        <div className="bg-white/70 dark:bg-white/[0.04] border-2 border-dashed border-slate-200 dark:border-white/10 rounded-2xl p-6 space-y-5 hover:border-[#1D9E75]/50 dark:hover:border-[#1D9E75]/30 transition-colors backdrop-blur-xl shadow-sm">
+        <div className={`border-2 border-dashed rounded-2xl p-6 space-y-5 backdrop-blur-xl shadow-sm transition-colors
+          ${uploadDisabled
+            ? 'bg-slate-50 dark:bg-white/[0.02] border-slate-200 dark:border-white/[0.05] opacity-60 cursor-not-allowed'
+            : 'bg-white/70 dark:bg-white/[0.04] border-slate-200 dark:border-white/10 hover:border-[#1D9E75]/50 dark:hover:border-[#1D9E75]/30'
+          }`}>
           <div className="flex flex-col items-center gap-2 text-center">
             <UploadCloudIcon className="w-11 h-11 text-slate-300 dark:text-slate-600" />
-            <p className="font-medium text-slate-600 dark:text-slate-300">Glissez vos fichiers ici ou cliquez pour uploader</p>
+            {uploadDisabled
+              ? <p className="font-medium text-slate-400 dark:text-slate-500">Upload désactivé — quota épuisé</p>
+              : <p className="font-medium text-slate-600 dark:text-slate-300">Glissez vos fichiers ici ou cliquez pour uploader</p>
+            }
             <p className="text-xs text-slate-400 dark:text-slate-500">PDF et images (JPG, PNG, WEBP, HEIC) — plusieurs fichiers acceptés</p>
           </div>
 
@@ -340,39 +503,45 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
           <div className="flex flex-wrap justify-center gap-3">
             <Button
               type="button" variant="outline" size="sm" className="gap-2 h-9"
+              disabled={uploadDisabled}
               onClick={() => singleRef.current?.click()}
             >
               <FileTextIcon className="w-4 h-4 text-red-400" /> Fichier unique
             </Button>
             <Button
               type="button" variant="outline" size="sm" className="gap-2 h-9"
+              disabled={uploadDisabled}
               onClick={() => multipleRef.current?.click()}
             >
               <ImageIcon className="w-4 h-4 text-blue-400" /> Plusieurs fichiers
             </Button>
-            <Button
-              type="button" variant="outline" size="sm"
-              className="gap-2 h-9 bg-emerald-50 dark:bg-[#1D9E75]/10 border-emerald-200 dark:border-[#1D9E75]/20 text-emerald-700 dark:text-[#1D9E75] hover:bg-emerald-100 dark:hover:bg-[#1D9E75]/20 hover:border-emerald-300 dark:hover:border-[#1D9E75]/40"
-              onClick={() => folderRef.current?.click()}
-            >
-              <FolderIcon className="w-4 h-4" /> Dossier complet
-            </Button>
+
+            {/* Dossier complet — masqué sur iOS (webkitdirectory non supporté) */}
+            {!isIOS ? (
+              <Button
+                type="button" variant="outline" size="sm"
+                className="gap-2 h-9 bg-emerald-50 dark:bg-[#1D9E75]/10 border-emerald-200 dark:border-[#1D9E75]/20 text-emerald-700 dark:text-[#1D9E75] hover:bg-emerald-100 dark:hover:bg-[#1D9E75]/20 hover:border-emerald-300 dark:hover:border-[#1D9E75]/40"
+                disabled={uploadDisabled}
+                onClick={() => folderRef.current?.click()}
+              >
+                <FolderIcon className="w-4 h-4" /> Dossier complet
+              </Button>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500 px-3 py-2">
+                <WifiOffIcon className="w-3.5 h-3.5" />
+                Dossier non supporté sur iOS
+              </span>
+            )}
           </div>
 
           {/* Hidden file inputs */}
-          <input
-            ref={singleRef} type="file" accept={ACCEPT_ATTR} className="hidden"
-            onChange={e => { handleFiles([...e.target.files]); e.target.value = '' }}
-          />
-          <input
-            ref={multipleRef} type="file" accept={ACCEPT_ATTR} multiple className="hidden"
-            onChange={e => { handleFiles([...e.target.files]); e.target.value = '' }}
-          />
-          <input
-            ref={folderRef} type="file" className="hidden"
+          <input ref={singleRef} type="file" accept={ACCEPT_ATTR} className="hidden" disabled={uploadDisabled}
+            onChange={e => { handleFiles([...e.target.files]); e.target.value = '' }} />
+          <input ref={multipleRef} type="file" accept={ACCEPT_ATTR} multiple className="hidden" disabled={uploadDisabled}
+            onChange={e => { handleFiles([...e.target.files]); e.target.value = '' }} />
+          <input ref={folderRef} type="file" className="hidden" disabled={uploadDisabled}
             {...{ webkitdirectory: '', directory: '' }}
-            onChange={e => { handleFolderFiles([...e.target.files]); e.target.value = '' }}
-          />
+            onChange={e => { handleFolderFiles([...e.target.files]); e.target.value = '' }} />
 
           {/* Upload progress */}
           {uploadProgress && (
@@ -391,7 +560,101 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
           )}
         </div>
 
-        {/* ── Action bar (shown when files exist) ── */}
+        {/* ── Search & filter bar ── */}
+        {docs.length > 0 && (
+          <div className="space-y-2">
+            {/* Search input */}
+            <div className="relative">
+              <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                type="search"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Rechercher par nom, fournisseur, dossier…"
+                className="w-full pl-9 pr-9 py-2.5 text-sm rounded-xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-white/[0.05] text-slate-800 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 outline-none focus:border-[#1D9E75]/50 dark:focus:border-[#1D9E75]/40 focus:ring-2 focus:ring-[#1D9E75]/10 transition-all backdrop-blur-xl shadow-sm"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                >
+                  <XIcon className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
+            {/* Filter chips */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {/* Statut chips */}
+              {[
+                { v: 'A_EXTRAIRE',  l: 'En attente'  },
+                { v: 'EN_COURS_IA', l: 'En cours'    },
+                { v: 'A_VERIFIER',  l: 'À vérifier'  },
+                { v: 'VALIDE',      l: 'Validé'      },
+                { v: 'REJETE',      l: 'Erreur IA'   },
+              ].map(({ v, l }) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setStatutFilter(prev => prev === v ? '' : v)}
+                  className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-all cursor-pointer
+                    ${statutFilter === v
+                      ? 'bg-[#1D9E75] border-[#1D9E75] text-white'
+                      : 'bg-white dark:bg-white/[0.04] border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:border-[#1D9E75]/40 hover:text-[#1D9E75]'
+                    }`}
+                >
+                  {l}
+                </button>
+              ))}
+
+              {/* Divider */}
+              <span className="w-px h-4 bg-slate-200 dark:bg-white/10 mx-0.5" />
+
+              {/* Type chips */}
+              {[
+                { v: 'facture',         l: 'Facture'    },
+                { v: 'releve_bancaire', l: 'Relevé'     },
+                { v: 'bon_commande',    l: 'Bon cmd'    },
+                { v: 'recu',            l: 'Reçu'       },
+              ].map(({ v, l }) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setTypeFilter(prev => prev === v ? '' : v)}
+                  className={`px-2.5 py-1 text-[11px] font-medium rounded-full border transition-all cursor-pointer
+                    ${typeFilter === v
+                      ? 'bg-slate-700 dark:bg-slate-200 border-slate-700 dark:border-slate-200 text-white dark:text-slate-900'
+                      : 'bg-white dark:bg-white/[0.04] border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 hover:border-slate-400 dark:hover:border-white/20 hover:text-slate-700 dark:hover:text-slate-200'
+                    }`}
+                >
+                  {l}
+                </button>
+              ))}
+
+              {/* Clear all */}
+              {hasActiveFilter && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="ml-auto flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-full border border-red-200 dark:border-red-500/20 text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors cursor-pointer"
+                >
+                  <FilterXIcon className="w-3 h-3" />
+                  Effacer les filtres
+                </button>
+              )}
+
+              {/* Result count */}
+              {hasActiveFilter && (
+                <span className="text-[11px] text-slate-400 dark:text-slate-500 ml-1">
+                  {filteredDocs.length} / {docs.length} document{docs.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── Action bar ── */}
         {docs.length > 0 && (
           <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-white/80 dark:bg-white/[0.05] border border-slate-200/70 dark:border-white/[0.08] rounded-xl shadow-sm sticky top-2 z-20 backdrop-blur-xl">
             <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300 cursor-pointer select-none">
@@ -453,11 +716,23 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Glissez vos fichiers ici ou cliquez pour uploader</p>
             <p className="text-xs text-slate-400 dark:text-slate-600">Vos extractions apparaîtront ici</p>
           </div>
+        ) : filteredDocs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-slate-200 dark:border-white/[0.07] rounded-2xl bg-white/40 dark:bg-white/[0.02] backdrop-blur-sm space-y-2">
+            <SearchIcon className="w-10 h-10 text-slate-300 dark:text-slate-700" />
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Aucun document ne correspond à la recherche</p>
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="mt-1 text-xs text-[#1D9E75] hover:underline cursor-pointer"
+            >
+              Effacer les filtres
+            </button>
+          </div>
         ) : (
           <div className="bg-white/80 dark:bg-white/[0.04] border border-slate-200/70 dark:border-white/[0.07] rounded-xl overflow-hidden shadow-sm divide-y divide-slate-100/80 dark:divide-white/[0.04] backdrop-blur-xl">
-            {docs.map(doc => {
+            {filteredDocs.map(doc => {
               const isSelectable = doc.statut === 'A_EXTRAIRE'
-              const isSelected = selectedDocIds.has(doc.id)
+              const isSelected   = selectedDocIds.has(doc.id)
 
               return (
                 <div
@@ -491,6 +766,9 @@ export default function ExtractionHub({ initialDocuments, templates, credits: in
                       {doc.document_type.replace(/_/g, ' ')}
                     </span>
                   )}
+
+                  {/* Confidence badge — warns on low AI reliability */}
+                  <ConfidenceBadge confidence={doc.confidence} />
 
                   <StatusBadge statut={doc.statut} />
 

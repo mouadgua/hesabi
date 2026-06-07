@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { createTemplateFromImageAction } from '@/app/dashboard/actions'
-import { SparklesIcon, BoxesIcon, FileJsonIcon } from "lucide-react"
+import { SparklesIcon, BoxesIcon, FileJsonIcon, CopyIcon } from "lucide-react"
+import { duplicateTemplateAction } from '@/app/dashboard/actions'
 import ShineWrapper from "@/components/reactbits/ShineWrapper"
 
 import ManualCreator from './ManualCreator'
@@ -26,7 +27,8 @@ export default async function ModelsPage() {
 
   const templates = await prisma.templateExtraction.findMany({
     where: { cabinet_id: utilisateur.cabinet_id },
-    orderBy: { createdAt: 'desc' }
+    orderBy: { createdAt: 'desc' },
+    include: { _count: { select: { documents: true } } },
   })
 
   return (
@@ -115,16 +117,34 @@ export default async function ModelsPage() {
           templates.map(template => (
             <Card key={template.id} className="rounded-2xl border border-slate-200/60 dark:border-white/[0.07] bg-white/70 dark:bg-white/[0.04] backdrop-blur-xl shadow-sm hover:shadow-md transition-shadow">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-bold flex justify-between items-center text-slate-800 dark:text-slate-100">
-                  {template.nom_modele}
-                  <Badge className="text-[10px] bg-[#E1F5EE] dark:bg-[#1D9E75]/10 text-[#085041] dark:text-[#1D9E75] border border-[#A8DCC9] dark:border-[#1D9E75]/20 hover:bg-[#E1F5EE]">Personnalisé</Badge>
+                <CardTitle className="text-sm font-bold flex justify-between items-start gap-2 text-slate-800 dark:text-slate-100">
+                  <span className="truncate">{template.nom_modele}</span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {template._count.documents > 0 && (
+                      <Badge variant="outline" className="text-[10px] border-slate-200 dark:border-white/10 text-slate-500 dark:text-slate-400 font-normal">
+                        {template._count.documents} doc{template._count.documents > 1 ? 's' : ''}
+                      </Badge>
+                    )}
+                    <Badge className="text-[10px] bg-[#E1F5EE] dark:bg-[#1D9E75]/10 text-[#085041] dark:text-[#1D9E75] border border-[#A8DCC9] dark:border-[#1D9E75]/20 hover:bg-[#E1F5EE]">Personnalisé</Badge>
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-xs text-slate-500 dark:text-slate-400 font-mono bg-slate-50/80 dark:bg-white/[0.03] p-3 rounded-xl border border-slate-100 dark:border-white/[0.06] max-h-32 overflow-y-auto mb-4 whitespace-pre-wrap">
                   {JSON.stringify(template.structure_json, null, 2)}
                 </div>
-                <ModelEditor template={{ id: template.id, nom_modele: template.nom_modele, structure_json: template.structure_json }} />
+                <div className="flex gap-2">
+                  <ModelEditor
+                    template={{ id: template.id, nom_modele: template.nom_modele, structure_json: template.structure_json }}
+                    usageCount={template._count.documents}
+                  />
+                  <form action={duplicateTemplateAction}>
+                    <input type="hidden" name="template_id" value={template.id} />
+                    <Button type="submit" variant="ghost" size="sm" className="gap-1.5 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/[0.05]">
+                      <CopyIcon className="w-3.5 h-3.5" /> Dupliquer
+                    </Button>
+                  </form>
+                </div>
               </CardContent>
             </Card>
           ))

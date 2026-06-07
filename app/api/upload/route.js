@@ -1,8 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
+import { createClient as createServiceClient } from '@supabase/supabase-js'
 import prisma from '@/lib/prisma'
+import { validateFileBytes } from '@/lib/sanitize'
 
-const ACCEPTED_EXTS = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic']
+const supabaseService = createServiceClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+)
+
+const ACCEPTED_EXTS  = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic']
+const ACCEPT_MIMES   = new Set(['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif'])
+const MAX_SIZE_BYTES = 20 * 1024 * 1024 // 20 MB server-side hard limit
 
 async function getOrCreateDefaultClient(cabinetId) {
   const existing = await prisma.client.findFirst({
@@ -23,18 +32,38 @@ export async function POST(request) {
   try { formData = await request.formData() }
   catch { return NextResponse.json({ error: 'Corps de requête invalide' }, { status: 400 }) }
 
-  const file = formData.get('file')
+  const file      = formData.get('file')
   const dossierId = formData.get('dossier_id') || null
 
   if (!file) return NextResponse.json({ error: 'Fichier manquant' }, { status: 400 })
 
+  // ── Extension check ───────────────────────────────────────────────────────
   const ext = file.name.split('.').pop().toLowerCase()
   if (!ACCEPTED_EXTS.includes(ext)) {
     return NextResponse.json({
-      error: `Format non supporté : ${file.name}. Seuls les PDF et images sont acceptés.`
+      error: `Format non supporté : ${file.name}. Seuls les PDF et images sont acceptés.`,
     }, { status: 400 })
   }
 
+  // ── Server-side size check ────────────────────────────────────────────────
+  if (file.size > MAX_SIZE_BYTES) {
+    return NextResponse.json({ error: 'Fichier trop volumineux (max 20 Mo).' }, { status: 400 })
+  }
+
+  // ── MIME type check ───────────────────────────────────────────────────────
+  if (!ACCEPT_MIMES.has(file.type)) {
+    return NextResponse.json({ error: 'Type MIME non supporté.' }, { status: 400 })
+  }
+
+  // ── Magic bytes check — prevents disguised files ──────────────────────────
+  const bytes  = Buffer.from(await file.arrayBuffer())
+  const base64 = bytes.toString('base64')
+  const bytesCheck = validateFileBytes(file.type, base64)
+  if (!bytesCheck.valid) {
+    return NextResponse.json({ error: bytesCheck.error }, { status: 400 })
+  }
+
+  // ── Cabinet + credits ─────────────────────────────────────────────────────
   const utilisateur = await prisma.utilisateur.findUnique({
     where: { id: user.id }, select: { cabinet_id: true }
   })
@@ -51,39 +80,49 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Crédits insuffisants. Rechargez votre compte.' }, { status: 400 })
   }
 
+  // ── Validate dossier_id belongs to this cabinet ───────────────────────────
+  if (dossierId) {
+    const validDossier = await prisma.dossier.findFirst({
+      where: { id: dossierId, client: { cabinet_id: utilisateur.cabinet_id } }
+    })
+    if (!validDossier) {
+      return NextResponse.json({ error: 'Dossier invalide.' }, { status: 400 })
+    }
+  }
+
   const defaultClient = await getOrCreateDefaultClient(utilisateur.cabinet_id)
 
-  const uniqueName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${ext}`
-  const filePath = `${utilisateur.cabinet_id}/${uniqueName}`
-  const bytes = Buffer.from(await file.arrayBuffer())
+  // ── Upload with UUID filename (no original name in path) ──────────────────
+  const uniqueName = `${crypto.randomUUID()}.${ext}`
+  const filePath   = `${utilisateur.cabinet_id}/${uniqueName}`
 
-  const { error: uploadError } = await supabase.storage
+  const { error: uploadError } = await supabaseService.storage
     .from('documents')
     .upload(filePath, bytes, { contentType: file.type || 'application/octet-stream' })
 
   if (uploadError) {
-    return NextResponse.json({ error: "Erreur d'upload : " + uploadError.message }, { status: 500 })
+    return NextResponse.json({ error: "Erreur d'upload." }, { status: 500 })
   }
 
   const doc = await prisma.document.create({
     data: {
-      client_id: defaultClient.id,
-      dossier_id: dossierId,
-      nom_fichier: file.name,
+      client_id:      defaultClient.id,
+      dossier_id:     dossierId,
+      nom_fichier:    file.name.slice(0, 255),  // Store original name for display only
       chemin_storage: filePath,
-      statut: 'A_EXTRAIRE',
+      statut:         'A_EXTRAIRE',
     },
   })
 
   await prisma.cabinet.update({
     where: { id: cabinet.id },
-    data: { credits: { decrement: 1 } },
+    data:  { credits: { decrement: 1 } },
   })
 
   return NextResponse.json({
-    documentId: doc.id,
+    documentId:  doc.id,
     nom_fichier: doc.nom_fichier,
-    statut: doc.statut,
-    createdAt: doc.createdAt.toISOString(),
+    statut:      doc.statut,
+    createdAt:   doc.createdAt.toISOString(),
   })
 }

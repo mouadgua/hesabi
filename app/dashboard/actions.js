@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma'
 import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { aiExtract } from '@/lib/ai'
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
 
 // ============================================================================
@@ -79,11 +80,16 @@ export async function deleteDocumentsAction(formData) {
     if (!user) throw new Error("Non autorisé")
 
     const documentIds = formData.getAll('documentIds')
-
     if (!documentIds || documentIds.length === 0) return
 
+    const utilisateur = await prisma.utilisateur.findUnique({
+        where: { id: user.id }, select: { cabinet_id: true }
+    })
+    if (!utilisateur?.cabinet_id) throw new Error("Cabinet introuvable")
+
+    // Only fetch documents that belong to this cabinet (IDOR prevention)
     const documents = await prisma.document.findMany({
-        where: { id: { in: documentIds } }
+        where: { id: { in: documentIds }, client: { cabinet_id: utilisateur.cabinet_id } }
     })
 
     const filePaths = documents.map(doc => doc.chemin_storage).filter(Boolean)
@@ -94,7 +100,7 @@ export async function deleteDocumentsAction(formData) {
     }
 
     await prisma.document.deleteMany({
-        where: { id: { in: documentIds } }
+        where: { id: { in: documents.map(d => d.id) } }
     })
 
     revalidatePath('/dashboard/extraction')
@@ -114,24 +120,40 @@ export async function extractDocumentsAction(formData) {
     if (!templateId) throw new Error("Veuillez sélectionner un modèle d'extraction.")
     if (!documentIds || documentIds.length === 0) throw new Error("Veuillez sélectionner au moins un document.")
 
-    try {
-        const dbTemplateId = (templateId === "NO_MODEL" || templateId === "DEFAULT_FACTURE") ? null : templateId;
+    const utilisateur = await prisma.utilisateur.findUnique({
+        where: { id: user.id }, select: { cabinet_id: true }
+    })
+    if (!utilisateur?.cabinet_id) throw new Error("Cabinet introuvable")
 
-        // Passer le statut en "En cours IA" instantanément
+    // Only process documents that belong to this cabinet (IDOR prevention)
+    const ownedDocs = await prisma.document.findMany({
+        where: { id: { in: documentIds }, client: { cabinet_id: utilisateur.cabinet_id } },
+        select: { id: true }
+    })
+    const safeIds = ownedDocs.map(d => d.id)
+    if (safeIds.length === 0) throw new Error("Aucun document valide sélectionné.")
+
+    try {
+        const dbTemplateId = (templateId === "NO_MODEL" || templateId === "DEFAULT_FACTURE") ? null : templateId
+
         await prisma.document.updateMany({
-            where: { id: { in: documentIds } },
-            data: { 
-                statut: 'EN_COURS_IA',
-                template_id: dbTemplateId 
-            }
+            where: { id: { in: safeIds } },
+            data: { statut: 'EN_COURS_IA', template_id: dbTemplateId }
         })
 
-        // Lancer le Worker en arrière-plan (File d'attente)
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
         fetch(`${appUrl}/api/worker-extraction`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ documentIds, templateId, userId: user.id })
+            headers: {
+                'Content-Type': 'application/json',
+                'x-worker-secret': process.env.WORKER_SECRET ?? '',
+            },
+            body: JSON.stringify({
+                documentIds: safeIds,
+                templateId,
+                userId:    user.id,
+                cabinetId: utilisateur.cabinet_id,
+            }),
         }).catch(err => console.error("Erreur lancement worker:", err))
 
     } catch (error) {
@@ -209,9 +231,14 @@ export async function reExtractSingleDocumentAction(formData) {
 
     if (!documentId || !templateId) throw new Error("Données manquantes")
 
-    // 1. Vérification des crédits restants
-    const document = await prisma.document.findUnique({
-        where: { id: documentId },
+    const utilisateur = await prisma.utilisateur.findUnique({
+        where: { id: user.id }, select: { cabinet_id: true }
+    })
+    if (!utilisateur?.cabinet_id) throw new Error("Cabinet introuvable")
+
+    // Verify document belongs to this cabinet (IDOR prevention)
+    const document = await prisma.document.findFirst({
+        where: { id: documentId, client: { cabinet_id: utilisateur.cabinet_id } },
         include: { client: { include: { cabinet: true } } }
     })
 
@@ -221,30 +248,31 @@ export async function reExtractSingleDocumentAction(formData) {
         throw new Error("Crédits épuisés. Impossible de re-extraire ce document.")
     }
 
-    // 2. Déduction du crédit
     await prisma.cabinet.update({
         where: { id: document.client.cabinet_id },
         data: { credits: { decrement: 1 } }
     })
 
-    // 3. Formatage pour Prisma
-    const dbTemplateId = (templateId === "NO_MODEL" || templateId === "DEFAULT_FACTURE") ? null : templateId;
+    const dbTemplateId = (templateId === "NO_MODEL" || templateId === "DEFAULT_FACTURE") ? null : templateId
 
-    // 4. Mise à jour du statut
     await prisma.document.update({
         where: { id: documentId },
-        data: { 
-            statut: 'EN_COURS_IA',
-            template_id: dbTemplateId
-        }
+        data: { statut: 'EN_COURS_IA', template_id: dbTemplateId }
     })
 
-    // 5. Lancement du Worker en fond
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
     fetch(`${appUrl}/api/worker-extraction`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentIds: [documentId], templateId, userId: user.id })
+        headers: {
+            'Content-Type': 'application/json',
+            'x-worker-secret': process.env.WORKER_SECRET ?? '',
+        },
+        body: JSON.stringify({
+            documentIds: [documentId],
+            templateId,
+            userId:    user.id,
+            cabinetId: utilisateur.cabinet_id,
+        }),
     }).catch(err => console.error("Erreur worker:", err))
 
     revalidatePath(`/dashboard/verification/${documentId}`)
@@ -259,17 +287,26 @@ export async function validateDocumentAction(formData) {
     if (!user) throw new Error("Non autorisé")
 
     const documentId = formData.get('documentId')
-
     if (!documentId) return
 
-    const donnees_extraites = {};
+    const utilisateur = await prisma.utilisateur.findUnique({
+        where: { id: user.id }, select: { cabinet_id: true }
+    })
+    if (!utilisateur?.cabinet_id) throw new Error("Cabinet introuvable")
+
+    // Verify document belongs to this cabinet (IDOR prevention)
+    const doc = await prisma.document.findFirst({
+        where: { id: documentId, client: { cabinet_id: utilisateur.cabinet_id } }
+    })
+    if (!doc) throw new Error("Document introuvable ou accès refusé")
+
+    const donnees_extraites = {}
     for (const [key, value] of formData.entries()) {
         if (key !== 'documentId' && !key.startsWith('$ACTION')) {
             try {
-                // Si c'était un objet/tableau complexe (ex: les "lignes" de facture), on le parse
-                donnees_extraites[key] = JSON.parse(value);
+                donnees_extraites[key] = JSON.parse(value)
             } catch {
-                donnees_extraites[key] = value;
+                donnees_extraites[key] = value
             }
         }
     }
@@ -332,56 +369,34 @@ export async function createTemplateFromImageAction(formData) {
     const file = formData.get('file')
     const nomModele = formData.get('nom_modele')
 
-    if (!file || !nomModele) {
-        throw new Error("Fichier et nom du modèle requis.")
-    }
+    if (!file || !nomModele) throw new Error("Fichier et nom du modèle requis.")
 
     const utilisateur = await prisma.utilisateur.findUnique({ where: { id: user.id }, select: { cabinet_id: true } })
     if (!utilisateur?.cabinet_id) throw new Error("Cabinet introuvable.")
-    const cabinetId = utilisateur.cabinet_id
 
     try {
-        // 1. Préparer l'image pour Gemini (Conversion en Base64)
         const arrayBuffer = await file.arrayBuffer()
-        const buffer = Buffer.from(arrayBuffer)
-        const base64Image = buffer.toString("base64")
+        const base64Image = Buffer.from(arrayBuffer).toString('base64')
         const mimeType = file.type
 
-        // 2. Initialiser Gemini
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" })
-        
-        // 3. Le Prompt magique pour générer la structure
-        const prompt = `Tu es un expert comptable et développeur. Analyse cette image de document (facture, reçu, relevé, etc.). 
-        Déduis tous les champs importants qui devraient être extraits systématiquement de ce type de document.
-        Génère une structure JSON où les clés sont les noms des champs en snake_case (ex: date_facture, montant_ht, tva, nom_fournisseur) et les valeurs sont null.
-        Renvoie UNIQUEMENT un objet JSON valide, sans texte avant ni après, et sans markdown (\`\`\`json).`
+        const prompt =
+            `Tu es un expert comptable et développeur. Analyse cette image de document (facture, reçu, relevé, etc.). ` +
+            `Déduis tous les champs importants qui devraient être extraits systématiquement de ce type de document. ` +
+            `Génère une structure JSON où les clés sont les noms des champs en snake_case (ex: date_facture, montant_ht, tva, nom_fournisseur) et les valeurs sont null. ` +
+            `Renvoie UNIQUEMENT un objet JSON valide, sans texte avant ni après, et sans markdown.`
 
-        const result = await model.generateContent([
-            prompt,
-            { inlineData: { data: base64Image, mimeType: mimeType } }
-        ])
+        const raw = await aiExtract(prompt, mimeType, base64Image, { maxTokens: 400, useCache: false })
+        const structureJson = JSON.parse(raw.replace(/```json/g, '').replace(/```/g, '').trim())
 
-        // 4. Nettoyage de la réponse de Gemini
-        let responseText = result.response.text()
-        responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim()
-        
-        const structureJson = JSON.parse(responseText)
-
-        // 5. Sauvegarde du nouveau modèle généré par l'IA dans Prisma
         await prisma.templateExtraction.create({
-            data: {
-                nom_modele: nomModele,
-                cabinet_id: cabinetId,
-                structure_json: structureJson
-            }
+            data: { nom_modele: nomModele, cabinet_id: utilisateur.cabinet_id, structure_json: structureJson }
         })
 
-        // 6. Rafraîchir l'interface
         revalidatePath('/dashboard/models')
         revalidatePath('/dashboard')
-        
+
     } catch (error) {
-        console.error("Erreur lors de la génération IA du modèle :", error)
+        console.error("Erreur génération modèle IA:", error)
         throw new Error("L'IA n'a pas pu générer le modèle à partir de cette image. Assurez-vous que l'image est nette.")
     }
 }
@@ -458,6 +473,36 @@ export async function createTemplateFromColumnsAction(formData) {
             nom_modele: nomModele,
             cabinet_id: utilisateur.cabinet_id,
             structure_json: structureJson,
+        }
+    })
+
+    revalidatePath('/dashboard/models')
+}
+
+// ============================================================================
+// 14. DUPLIQUER UN MODÈLE D'EXTRACTION
+// ============================================================================
+export async function duplicateTemplateAction(formData) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error("Non autorisé")
+
+    const templateId = formData.get('template_id')
+    if (!templateId) throw new Error("ID manquant.")
+
+    const utilisateur = await prisma.utilisateur.findUnique({ where: { id: user.id }, select: { cabinet_id: true } })
+    if (!utilisateur?.cabinet_id) throw new Error("Cabinet introuvable.")
+
+    const original = await prisma.templateExtraction.findFirst({
+        where: { id: templateId, cabinet_id: utilisateur.cabinet_id }
+    })
+    if (!original) throw new Error("Modèle introuvable.")
+
+    await prisma.templateExtraction.create({
+        data: {
+            nom_modele:     `Copie de ${original.nom_modele}`,
+            cabinet_id:     utilisateur.cabinet_id,
+            structure_json: original.structure_json,
         }
     })
 

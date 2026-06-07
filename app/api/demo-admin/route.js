@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getDemoLog, getDemoStats } from '@/lib/rateLimiter'
+import { getAICircuitStatus, getAICacheStats } from '@/lib/ai'
 
 export async function GET(request) {
   const secret = request.nextUrl.searchParams.get('secret')
@@ -8,8 +9,8 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const stats = getDemoStats()
-  const log = getDemoLog()
-
-  return NextResponse.json({ stats, log })
+  return NextResponse.json({
+    demo:    { stats: getDemoStats(), log: getDemoLog() },
+    ai:      { circuit: getAICircuitStatus(), cache: getAICacheStats() },
+  })
 }

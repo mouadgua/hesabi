@@ -42,6 +42,6 @@ export async function POST(request) {
     return NextResponse.json({ success: true })
   } catch (err) {
     console.error('Onboarding complete error:', err)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+    return NextResponse.json({ error: 'Erreur serveur.' }, { status: 500 })
   }
 }

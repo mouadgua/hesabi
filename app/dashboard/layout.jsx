@@ -27,12 +27,36 @@ export default async function DashboardLayout({ children }) {
     redirect('/onboarding')
   }
 
-  const pendingCount = await prisma.document.count({
-    where: {
-      client: { cabinet_id: utilisateurDb.cabinet_id },
-      statut: { in: ['A_VERIFIER', 'REJETE'] },
-    },
-  })
+  const [pendingCount, rawClients] = await Promise.all([
+    prisma.document.count({
+      where: {
+        client: { cabinet_id: utilisateurDb.cabinet_id },
+        statut: { in: ['A_VERIFIER', 'REJETE'] },
+      },
+    }),
+    prisma.client.findMany({
+      where: {
+        cabinet_id: utilisateurDb.cabinet_id,
+        nom_entreprise: { not: '_default' },
+      },
+      orderBy: { nom_entreprise: 'asc' },
+      select: {
+        id: true,
+        nom_entreprise: true,
+        _count: {
+          select: {
+            documents: { where: { statut: { in: ['A_VERIFIER', 'REJETE'] } } },
+          },
+        },
+      },
+    }),
+  ])
+
+  const clients = rawClients.map(c => ({
+    id:      c.id,
+    nom:     c.nom_entreprise,
+    pending: c._count.documents,
+  }))
 
   const userProfile = {
     name: user.user_metadata?.full_name || "Utilisateur",
@@ -64,7 +88,7 @@ export default async function DashboardLayout({ children }) {
           }}
         >
           <NotificationProvider initialCount={pendingCount}>
-          <AppSidebar user={userProfile} cabinet={cabinetProfile} />
+          <AppSidebar user={userProfile} cabinet={cabinetProfile} clients={clients} />
 
           <SidebarInset className="bg-transparent border-l border-[#1D9E75]/10 dark:border-white/[0.05] flex flex-col overflow-hidden relative z-10">
             <SiteHeader user={userProfile} />

@@ -2,6 +2,12 @@ import { NextResponse } from 'next/server'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { sanitizeEmail, validateDemoFile, validateFileBytes } from '@/lib/sanitize'
 import { checkDemoRateLimit, recordDemoRequest } from '@/lib/rateLimiter'
+import prisma from '@/lib/prisma'
+import crypto from 'crypto'
+
+function hashIp(ip) {
+  return crypto.createHash('sha256').update(ip + (process.env.IP_HASH_SALT || 'hesabi')).digest('hex').slice(0, 16)
+}
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
 
@@ -81,6 +87,9 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const rawIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '127.0.0.1'
+  const ipHash = hashIp(rawIp)
+
   try {
     const body = await request.json()
     const { email, mimeType, fileData, selectedFields, sessionId } = body ?? {}
@@ -181,6 +190,17 @@ export async function POST(request) {
 
     // ── Record & respond ────────────────────────────────────────────────────────
     recordDemoRequest(cleanSession, cleanEmail, docType)
+
+    // Persist to DB for admin dashboard (fire-and-forget, non-blocking)
+    prisma.demoAttempt.create({
+      data: {
+        email:      cleanEmail,
+        session_id: cleanSession,
+        status:     'SUCCESS',
+        doc_type:   docType,
+        ip_hash:    ipHash,
+      },
+    }).catch(() => {})
 
     return NextResponse.json({ success: true, docType, confidence, data: extractedData })
   } catch (err) {

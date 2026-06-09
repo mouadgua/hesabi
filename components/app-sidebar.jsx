@@ -9,9 +9,12 @@ import {
   HomeIcon, SparklesIcon, FolderIcon, BellIcon,
   Settings2Icon, CreditCardIcon, CircleHelpIcon, CommandIcon, LogOutIcon,
   ChevronRightIcon, PlusIcon, PencilIcon, Trash2Icon, CheckIcon, XIcon,
-  UsersIcon,
+  UsersIcon, ShieldIcon,
 } from "lucide-react"
+
+const ADMIN_EMAIL = 'mouadguarraz@gmail.com'
 import { logout } from "@/app/login/actions"
+import { toast } from "sonner"
 import {
   Sidebar, SidebarContent, SidebarFooter, SidebarHeader,
 } from "@/components/ui/sidebar"
@@ -206,6 +209,8 @@ function ClientsSection({ initialClients }) {
       setClients(prev => [...prev, client].sort((a, b) => a.nom.localeCompare(b.nom, 'fr')))
       router.push(`/dashboard/extraction?client=${client.id}`)
       router.refresh()
+    } else {
+      toast.error("Impossible de créer le client")
     }
   }
 
@@ -224,6 +229,8 @@ function ClientsSection({ initialClients }) {
           .sort((a, b) => a.nom.localeCompare(b.nom, 'fr'))
       )
       router.refresh()
+    } else {
+      toast.error("Impossible de renommer le client")
     }
   }
 
@@ -234,6 +241,8 @@ function ClientsSection({ initialClients }) {
       setClients(prev => prev.filter(c => c.id !== id))
       if (activeClientId === id) router.push('/dashboard/extraction')
       router.refresh()
+    } else {
+      toast.error("Impossible de supprimer le client")
     }
   }
 
@@ -420,6 +429,28 @@ export function AppSidebar({ user, cabinet, clients = [], ...props }) {
             <NavItem key={item.url} item={item} pathname={pathname} />
           ))}
         </div>
+
+        {/* Admin link — only visible to the admin account */}
+        {user?.email === ADMIN_EMAIL && (
+          <>
+            <div className="my-3 h-px bg-slate-200/60 dark:bg-white/[0.06]" />
+            <Link
+              href="/admin"
+              className={[
+                "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150 border-l-2",
+                pathname.startsWith("/admin")
+                  ? "border-[#1D9E75] bg-[#1D9E75]/10 text-[#1D9E75]"
+                  : "border-transparent text-slate-400 dark:text-slate-500 hover:bg-slate-100/70 dark:hover:bg-white/[0.05] hover:text-slate-700 dark:hover:text-slate-300",
+              ].join(" ")}
+            >
+              <ShieldIcon className="size-4 shrink-0" />
+              <span className="truncate">Admin</span>
+              <span className="ml-auto rounded-full bg-[#1D9E75]/15 px-1.5 py-0.5 text-[10px] font-semibold text-[#1D9E75]">
+                privé
+              </span>
+            </Link>
+          </>
+        )}
       </SidebarContent>
 
       {/* User footer */}

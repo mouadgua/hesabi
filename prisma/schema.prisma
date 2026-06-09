@@ -18,6 +18,7 @@ model Utilisateur {
   actif           Boolean  @default(true)
   onboarding_done Boolean  @default(false)
   createdAt       DateTime @default(now())
+  last_active_at  DateTime?
 
   cabinet         Cabinet? @relation(fields: [cabinet_id], references: [id], onDelete: Cascade)
 }
@@ -25,28 +26,30 @@ model Utilisateur {
 model Cabinet {
   id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nom                 String
-  logo_url            String?  
+  logo_url            String?
   plan_abonnement     String   @default("PRO")
   createdAt           DateTime @default(now())
-  
-  // 💡 GESTION DES CRÉDITS (L'essai gratuit)
+
   credits             Int      @default(15)
-  
-  // 💰 SYSTÈME DE PAIEMENT (Prêt pour l'intégration future)
+  credits_limit       Int      @default(15)  // admin-adjustable quota
+
   stripe_customer_id     String?  @unique
   stripe_subscription_id String?  @unique
-  plan_status            String   @default("TRIAL") // Options: TRIAL, ACTIVE, CANCELED
+  plan_status            String   @default("TRIAL")
 
-  ice                 String?       
-  identifiant_fiscal  String?       
-  registre_commerce   String?       
-  patente             String?       
+  suspended           Boolean  @default(false)
+  suspend_reason      String?
+
+  ice                 String?
+  identifiant_fiscal  String?
+  registre_commerce   String?
+  patente             String?
   adresse             String?
   ville               String?
   code_postal         String?
   telephone           String?
   site_web            String?
-  
+
   utilisateurs        Utilisateur[]
   clients             Client[]
   templates           TemplateExtraction[]
@@ -58,40 +61,39 @@ model Client {
   id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   cabinet_id         String   @db.Uuid
   nom_entreprise     String
-  
-  // Les informations de recoupement (Master Data)
+
   ice                String?  @db.VarChar(15)
   identifiant_fiscal String?
   registre_commerce  String?
-  rib                String?  @db.VarChar(24) 
+  rib                String?  @db.VarChar(24)
   adresse            String?
   ville              String?
-  
+
   statut             StatutClient @default(ACTIF)
   createdAt          DateTime @default(now())
-  
+
   cabinet            Cabinet    @relation(fields: [cabinet_id], references: [id], onDelete: Cascade)
   documents          Document[]
-  dossiers           Dossier[]  // <--- LA LIGNE MANQUANTE EST ICI !
+  dossiers           Dossier[]
 }
 
 // --- 3. MODÈLES D'EXTRACTION (PRESETS) ---
 model TemplateExtraction {
   id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   cabinet_id      String   @db.Uuid
-  nom_modele      String   // Ex: "Facture Standard", "Relevé CIH", "Notes de frais"
-  structure_json  Json     // La structure des colonnes attendues
+  nom_modele      String
+  structure_json  Json
   createdAt       DateTime @default(now())
 
   cabinet         Cabinet    @relation(fields: [cabinet_id], references: [id], onDelete: Cascade)
-  documents       Document[] 
+  documents       Document[]
 }
 
 model Dossier {
   id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   nom        String
   client_id  String   @db.Uuid
-  parent_id  String?  @db.Uuid // Pour faire des sous-dossiers si besoin
+  parent_id  String?  @db.Uuid
   createdAt  DateTime @default(now())
 
   client     Client   @relation(fields: [client_id], references: [id], onDelete: Cascade)
@@ -107,11 +109,15 @@ model Document {
   chemin_storage              String         @db.Text
   statut                      DocumentStatut @default(A_EXTRAIRE)
   donnees_extraites           Json?
-  // Classification Gemini
-  document_type               String?        // facture | releve_bancaire | bon_commande | recu | autre
-  document_type_confidence    Float?         // 0.0 – 1.0
+  document_type               String?
+  document_type_confidence    Float?
   fournisseur_detecte         String?
   error_message               String?        @db.Text
+  // AI tracking fields
+  ai_provider                 String?        // gemini-pdf | claude-haiku | gpt-4o | gemini-flash | qwen
+  processing_ms               Int?           // wall-clock extraction time
+  tokens_in                   Int?
+  tokens_out                  Int?
   createdAt                   DateTime       @default(now())
   updatedAt                   DateTime       @updatedAt
 
@@ -119,6 +125,9 @@ model Document {
   template           TemplateExtraction? @relation(fields: [template_id], references: [id])
   dossier_id         String?  @db.Uuid
   dossier            Dossier? @relation(fields: [dossier_id], references: [id])
+
+  @@index([client_id, statut])
+  @@index([statut, updatedAt])
 }
 
 // --- 5. LEARNING LOOP ---
@@ -155,22 +164,72 @@ model MissingFieldRequest {
   createdAt     DateTime @default(now())
 }
 
-// --- 7. BETA ACCESS KEYS ---
+// --- 7. BETA ACCESS KEYS (extended) ---
 model BetaKey {
-  id        String    @id @default(cuid())
-  key       String    @unique
-  used      Boolean   @default(false)
-  used_by   String?
-  used_at   DateTime?
-  createdAt DateTime  @default(now())
+  id          String    @id @default(cuid())
+  key         String    @unique
+  email       String?   // assigned to specific email (optional — open if null)
+  note        String?   // admin internal note
+  used        Boolean   @default(false)
+  used_by     String?   // email of user who redeemed
+  used_at     DateTime?
+  expires_at  DateTime?
+  max_uses    Int?      // null = unlimited, 1 = single-use
+  use_count   Int       @default(0)
+  credits     Int       @default(15)  // extractions granted on redemption
+  is_active   Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+}
+
+// --- 8. ADMIN AUDIT LOG ---
+model AdminLog {
+  id        String   @id @default(cuid())
+  action    String   // e.g. "SUSPEND_USER", "GENERATE_KEY", "ADJUST_QUOTA"
+  entity    String?  // e.g. "cabinet" | "beta_key" | "system"
+  entity_id String?
+  details   Json?
+  ip        String?
+  createdAt DateTime @default(now())
+}
+
+// --- 9. DEMO ATTEMPTS (persistent — rateLimiter is in-memory only) ---
+model DemoAttempt {
+  id         String   @id @default(cuid())
+  email      String
+  session_id String?
+  status     String   // SUCCESS | BLOCKED_SESSION | BLOCKED_EMAIL
+  doc_type   String?
+  ip_hash    String?
+  createdAt  DateTime @default(now())
+}
+
+// --- 10. SITE VISITS ---
+model SiteVisit {
+  id        String   @id @default(cuid())
+  site      String   // main | demo
+  path      String?
+  ip_hash   String?
+  device    String?  // mobile | desktop | tablet
+  createdAt DateTime @default(now())
+}
+
+// --- 11. USER RATINGS & INBOX ---
+model UserRating {
+  id        String   @id @default(cuid())
+  user_id   String?
+  email     String?
+  rating    Int      // 1–5
+  comment   String?  @db.Text
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 
 // --- ÉNUMÉRATIONS ---
 enum DocumentStatut {
-  A_EXTRAIRE      // Fichier dans le dossier, prêt à être sélectionné
-  EN_COURS_IA     // L'IA est en train de traiter
-  A_VERIFIER      // L'IA a fini, attente de validation humaine
-  VALIDE          // Validé par le comptable
+  A_EXTRAIRE
+  EN_COURS_IA
+  A_VERIFIER
+  VALIDE
   REJETE
 }
 

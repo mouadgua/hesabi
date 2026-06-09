@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useState } from "react"
 
 const NotificationContext = createContext({ count: 0, notifications: [], refresh: () => {} })
 
@@ -10,7 +10,7 @@ export function NotificationProvider({ initialCount = 0, children }) {
   const [count, setCount] = useState(initialCount)
   const [notifications, setNotifications] = useState([])
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/notifications")
       const data = await res.json()
@@ -20,13 +20,13 @@ export function NotificationProvider({ initialCount = 0, children }) {
     } catch {
       // keep previous state
     }
-  }
+  }, [])
 
   useEffect(() => {
     refresh()
     const interval = setInterval(refresh, POLL_INTERVAL)
     return () => clearInterval(interval)
-  }, [])
+  }, [refresh])
 
   return (
     <NotificationContext.Provider value={{ count, notifications, refresh }}>

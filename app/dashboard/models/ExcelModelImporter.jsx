@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useRef } from "react"
-import * as XLSX from "xlsx"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -19,9 +18,10 @@ export default function ExcelModelImporter() {
   const [dragIdx, setDragIdx] = useState(null)
   const fileRef = useRef(null)
 
-  function handleFile(e) {
+  async function handleFile(e) {
     const file = e.target.files[0]
     if (!file) return
+    const XLSX = await import("xlsx")
     const reader = new FileReader()
     reader.onload = (ev) => {
       try {

@@ -45,7 +45,7 @@ export default function NotificationDropdown() {
     if (!open) return
     setLoading(true)
     refresh().finally(() => setLoading(false))
-  }, [open])
+  }, [open, refresh])
 
   // Close on outside click
   useEffect(() => {
@@ -90,7 +90,7 @@ export default function NotificationDropdown() {
 
       {/* Dropdown panel */}
       {open && (
-        <div className="absolute right-0 top-10 z-50 w-[calc(100vw-2rem)] max-w-sm sm:w-80 rounded-2xl border border-slate-200/70 dark:border-white/[0.08] bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl shadow-xl overflow-hidden">
+        <div className="fixed inset-x-4 top-[68px] z-[100] sm:absolute sm:inset-auto sm:right-0 sm:top-10 sm:w-80 rounded-2xl border border-slate-200/70 dark:border-white/[0.08] bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl shadow-xl overflow-hidden">
 
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-white/[0.06]">

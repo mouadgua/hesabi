@@ -23,8 +23,14 @@ export default async function VerificationPage({ params }) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const document = await prisma.document.findUnique({
-    where: { id },
+  const utilisateur = await prisma.utilisateur.findUnique({
+    where: { id: user.id }, select: { cabinet_id: true },
+  })
+  if (!utilisateur?.cabinet_id) redirect('/onboarding')
+
+  // findFirst + cabinet scope — prevents IDOR (any authenticated user viewing another cabinet's document)
+  const document = await prisma.document.findFirst({
+    where: { id, client: { cabinet_id: utilisateur.cabinet_id } },
     include: {
       client: { include: { cabinet: { include: { templates: true } } } },
       template: true,
@@ -98,9 +104,14 @@ export default async function VerificationPage({ params }) {
           {/* Left — PDF viewer */}
           <div className="h-[45vh] w-full border-b border-slate-200/60 dark:border-white/[0.05] bg-slate-100/50 dark:bg-white/[0.02] p-3 md:h-full md:w-1/2 md:border-b-0 md:border-r">
             <div className="relative h-full w-full overflow-hidden rounded-xl border border-slate-200/60 dark:border-white/10 bg-white dark:bg-slate-900 shadow-inner">
-              {signedUrl ? (
-                <iframe src={signedUrl} className="absolute inset-0 h-full w-full border-0" />
-              ) : (
+              {signedUrl ? (() => {
+                const ext = (document.chemin_storage || document.nom_fichier || '').split('.').pop().toLowerCase()
+                const isImage = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'].includes(ext)
+                return isImage
+                  // eslint-disable-next-line @next/next/no-img-element -- signed Supabase URL, next/image can't optimize expiring tokens
+                  ? <img src={signedUrl} alt={document.nom_fichier} className="absolute inset-0 h-full w-full object-contain" />
+                  : <iframe src={signedUrl} className="absolute inset-0 h-full w-full border-0" />
+              })() : (
                 <div className="flex h-full items-center justify-center text-slate-400 dark:text-slate-600 text-sm">
                   Fichier indisponible
                 </div>

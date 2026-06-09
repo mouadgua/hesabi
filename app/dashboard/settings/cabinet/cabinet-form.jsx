@@ -1,28 +1,36 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import Image from "next/image"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { CardContent, CardFooter } from "@/components/ui/card"
-import { UploadCloudIcon, FileTextIcon, MapPinIcon } from "lucide-react"
+import { UploadCloudIcon, FileTextIcon, MapPinIcon, Loader2Icon } from "lucide-react"
 
 export function CabinetForm({ initialCabinet, isAdmin, action }) {
   const [previewUrl, setPreviewUrl] = useState(initialCabinet.logo_url)
-  const [isUploading, setIsUploading] = useState(false)
+  const [isPending, startTransition] = useTransition()
 
   const handleImageChange = (e) => {
     const file = e.target.files?.[0]
     if (file) setPreviewUrl(URL.createObjectURL(file))
   }
 
+  function handleSubmit(formData) {
+    startTransition(async () => {
+      try {
+        await action(formData)
+        toast.success("Modifications sauvegardées")
+      } catch (err) {
+        toast.error(err.message || "Erreur lors de la sauvegarde")
+      }
+    })
+  }
+
   return (
-    <form action={async (formData) => {
-      setIsUploading(true)
-      await action(formData)
-      setIsUploading(false)
-    }}>
+    <form action={handleSubmit}>
       <CardContent className="space-y-8 pt-6">
 
         {/* SECTION 1 : LOGO ET NOM */}
@@ -159,9 +167,10 @@ export function CabinetForm({ initialCabinet, isAdmin, action }) {
         <Button
           type="submit"
           className="bg-[#1D9E75] hover:bg-[#0F6E56] text-white shadow-sm"
-          disabled={!isAdmin || isUploading}
+          disabled={!isAdmin || isPending}
         >
-          {isUploading ? "Sauvegarde en cours…" : "Sauvegarder les modifications"}
+          {isPending && <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />}
+          {isPending ? "Sauvegarde en cours…" : "Sauvegarder les modifications"}
         </Button>
       </CardFooter>
     </form>

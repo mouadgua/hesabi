@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { setupWorkspace } from "./actions"
 import {
@@ -34,7 +34,7 @@ function SlideUpload() {
       <div>
         <h2 className="text-xl font-semibold text-gray-900">Glissez, déposez, extrayez</h2>
         <p className="mt-2 text-sm text-gray-500 max-w-xs mx-auto leading-relaxed">
-          Uploadez vos factures, relevés bancaires et reçus en PDF ou image. FiduCaire les analyse automatiquement.
+          Uploadez vos factures, relevés bancaires et reçus en PDF ou image. Hesabi les analyse automatiquement.
         </p>
       </div>
     </div>
@@ -101,14 +101,18 @@ const SLIDES = [
 
 export default function OnboardingPage() {
   const router = useRouter()
-  const [step, setStep] = useState(1)          // 1=welcome 2=tour
-  const [slide, setSlide] = useState(0)
-  const [prenom, setPrenom] = useState("")
+  const [step, setStep]       = useState(1)
+  const [slide, setSlide]     = useState(0)
+  const [prenom, setPrenom]   = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [showTour, setShowTour] = useState(false)
+  const [showTour, setShowTour]   = useState(false)
+  const [slideKey, setSlideKey]   = useState(0)
 
-  // Reset slide animations when changing slides
-  const [slideKey, setSlideKey] = useState(0)
+  // Touch / swipe state
+  const [touchStart, setTouchStart] = useState(null)
+  const [touchEnd,   setTouchEnd]   = useState(null)
+  const SWIPE_THRESHOLD = 50
+
   const changeSlide = (i) => {
     setSlide(i)
     setSlideKey((k) => k + 1)
@@ -117,7 +121,7 @@ export default function OnboardingPage() {
   const goToTour = () => {
     setShowTour(false)
     setStep(2)
-    setTimeout(() => setShowTour(true), 50) // trigger entrance animation
+    setTimeout(() => setShowTour(true), 50)
   }
 
   const finish = async () => {
@@ -129,7 +133,18 @@ export default function OnboardingPage() {
     }
   }
 
-  const SlideComponent = SLIDES[slide].component
+  // Swipe handlers
+  const onTouchStart = (e) => {
+    setTouchEnd(null)
+    setTouchStart(e.targetTouches[0].clientX)
+  }
+  const onTouchMove  = (e) => setTouchEnd(e.targetTouches[0].clientX)
+  const onTouchEnd   = () => {
+    if (!touchStart || !touchEnd) return
+    const delta = touchStart - touchEnd
+    if (delta >  SWIPE_THRESHOLD && slide < SLIDES.length - 1) changeSlide(slide + 1)
+    if (delta < -SWIPE_THRESHOLD && slide > 0)                  changeSlide(slide - 1)
+  }
 
   return (
     <div
@@ -151,7 +166,7 @@ export default function OnboardingPage() {
 
         <div className="space-y-1.5">
           <h1 className="text-[26px] font-semibold tracking-tight text-gray-900">
-            Bienvenue sur FiduCaire
+            Bienvenue sur Hesabi
           </h1>
           <p className="text-sm text-gray-500">
             Votre assistant d'extraction comptable intelligent
@@ -188,15 +203,33 @@ export default function OnboardingPage() {
       >
         {/* Card */}
         <div className="w-full rounded-2xl border border-gray-100 bg-white shadow-[0_8px_40px_rgba(0,0,0,0.06)] overflow-hidden">
-          {/* Slide viewport */}
-          <div className="relative h-[340px] overflow-hidden">
+          {/* Slide viewport — swipe-enabled */}
+          <div
+            className="relative h-[340px] overflow-hidden select-none"
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+          >
+            {/*
+              translateX formula: each slide is (100/N)% of the flex container.
+              To show slide i, move the container left by i × (100/N)%.
+              (translateX percentages are relative to the element's own width.)
+            */}
             <div
-              className="flex h-full transition-transform duration-400 ease-in-out"
-              style={{ transform: `translateX(-${slide * 100}%)`, width: `${SLIDES.length * 100}%` }}
+              className="flex h-full transition-transform duration-300 ease-in-out"
+              style={{
+                width: `${SLIDES.length * 100}%`,
+                transform: `translateX(-${slide * (100 / SLIDES.length)}%)`,
+              }}
             >
               {SLIDES.map((s, i) => (
-                <div key={`${s.id}-${slideKey}`} className="h-full" style={{ width: `${100 / SLIDES.length}%` }}>
-                  {i === slide && <SlideComponent />}
+                <div
+                  key={s.id}
+                  className="h-full"
+                  style={{ width: `${100 / SLIDES.length}%` }}
+                >
+                  {/* Key on the component resets CSS animations when landing on this slide */}
+                  <s.component key={i === slide ? slideKey : s.id} />
                 </div>
               ))}
             </div>

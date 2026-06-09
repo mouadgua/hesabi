@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 import { Renderer, Program, Mesh, Color, Triangle } from "ogl"
 
 const VERT = `#version 300 es
@@ -94,7 +94,8 @@ export default function Aurora({
   speed = 1.0,
 }) {
   const propsRef = useRef({ colorStops, amplitude, blend, speed })
-  propsRef.current = { colorStops, amplitude, blend, speed }
+  // Update ref after each render so the WebGL loop always reads latest props
+  useLayoutEffect(() => { propsRef.current = { colorStops, amplitude, blend, speed } })
   const ctnRef = useRef(null)
 
   useEffect(() => {

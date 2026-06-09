@@ -3,14 +3,28 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
-  // Override default ignores of eslint-config-next.
+
   globalIgnores([
-    // Default ignores of eslint-config-next:
     ".next/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
+    ".claude/**",          // Claude Code tool files — not app code
+    "prisma/seed-*.js",
   ]),
+
+  {
+    rules: {
+      // French text with apostrophes is safe — React escapes at runtime, not XSS.
+      "react/no-unescaped-entities": "off",
+
+      // Standard hydration guard `useEffect(() => setMounted(true), [])` is intentional.
+      "react-hooks/set-state-in-effect": "off",
+
+      // Real infinite-loop risk — fixed UsersHub.jsx, keep as warn to catch regressions.
+      "react-hooks/set-state-in-render": "warn",
+    },
+  },
 ]);
 
 export default eslintConfig;

@@ -4,6 +4,29 @@ import { createClient } from '@supabase/supabase-js'
 import { aiExtract } from '@/lib/ai'
 import { buildExtractionPrompt } from '@/utils/buildExtractionPrompt'
 
+// Extracts the first valid JSON object or array from any AI response string.
+// Handles: raw JSON, ```json fences, prose + JSON, trailing commentary.
+function extractJSON(raw) {
+  if (!raw) return null
+  const s = raw.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim()
+
+  try { return JSON.parse(s) } catch {}
+
+  const objStart = s.indexOf('{')
+  const objEnd   = s.lastIndexOf('}')
+  if (objStart !== -1 && objEnd > objStart) {
+    try { return JSON.parse(s.slice(objStart, objEnd + 1)) } catch {}
+  }
+
+  const arrStart = s.indexOf('[')
+  const arrEnd   = s.lastIndexOf(']')
+  if (arrStart !== -1 && arrEnd > arrStart) {
+    try { return JSON.parse(s.slice(arrStart, arrEnd + 1)) } catch {}
+  }
+
+  return null
+}
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -29,7 +52,7 @@ async function classifyDocument(mimeType, base64) {
 Règles : confidence=1.0 si totalement certain, 0.5 si ambigu.`
 
   try {
-    const raw = await aiExtract(prompt, mimeType, base64, { maxTokens: 150, useCache: true })
+    const { content: raw } = await aiExtract(prompt, mimeType, base64, { maxTokens: 150, useCache: true })
     const parsed = JSON.parse(raw.replace(/```json/g, '').replace(/```/g, '').trim())
     return {
       type:       VALID_TYPES.includes(parsed.type) ? parsed.type : 'autre',
@@ -66,9 +89,16 @@ async function findMatchingTemplate(type, cabinetId) {
 // ── Worker handler ─────────────────────────────────────────────────────────────
 
 export async function POST(request) {
-  // ── Internal secret check — prevents external callers from triggering the worker
+  // ── Internal secret check — always required in production ────────────────────
   const workerSecret = process.env.WORKER_SECRET
-  if (workerSecret) {
+  if (!workerSecret) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[Worker] WORKER_SECRET not set — refusing all requests in production')
+      return NextResponse.json({ error: 'Worker non configuré' }, { status: 503 })
+    }
+    // Development: allow without secret, but warn
+    console.warn('[Worker] WORKER_SECRET not set — unauthenticated access allowed in dev only')
+  } else {
     const authHeader = request.headers.get('x-worker-secret')
     if (authHeader !== workerSecret) {
       return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
@@ -81,14 +111,16 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'Aucun document fourni.' })
     }
 
+    // cabinetId is required to prevent cross-cabinet document access (IDOR)
+    if (!cabinetId || typeof cabinetId !== 'string') {
+      return NextResponse.json({ success: false, message: 'cabinetId requis.' }, { status: 400 })
+    }
+
     for (const docId of documentIds) {
       try {
-        // ── Fetch document — verify ownership via cabinetId ───────────────────
+        // ── Fetch document — always scope to cabinetId (IDOR prevention) ────────
         const document = await prisma.document.findFirst({
-          where: {
-            id: docId,
-            ...(cabinetId ? { client: { cabinet_id: cabinetId } } : {}),
-          },
+          where: { id: docId, client: { cabinet_id: cabinetId } },
         })
         if (!document) {
           console.warn(`[Worker] Document ${docId} introuvable ou accès refusé`)
@@ -163,23 +195,51 @@ export async function POST(request) {
           `Si le document contient un tableau (articles de facture, lignes de relevé bancaire, etc.), utilise TOUJOURS un tableau JSON d'objets — jamais de champs plats numérotés (ex: item_1_designation est interdit).\n` +
           promptSuffix
 
-        // ── STEP 4 : AI extraction via OpenRouter ─────────────────────────────
-        let rawResponse
+        // ── STEP 4 : AI extraction ────────────────────────────────────────────
+        // Token budget by type — bank statements can have 30+ rows, need room.
+        const TOKEN_BUDGET = {
+          releve_bancaire: 6000,
+          facture:         3000,
+          bon_commande:    3000,
+          recu:            1500,
+          autre:           3000,
+        }
+        const maxTokens = TOKEN_BUDGET[classification.type] ?? 3000
+
+        let rawResponse, aiProvider
+        const extractStart = Date.now()
         try {
-          rawResponse = await aiExtract(fullPrompt, mimeType, base64, { maxTokens: 1500 })
+          const result = await aiExtract(fullPrompt, mimeType, base64, { maxTokens })
+          rawResponse = result.content
+          aiProvider  = result.provider
         } catch (aiErr) {
           if (aiErr.message === 'ALL_PROVIDERS_FAILED') {
             throw new Error('SERVICE_UNAVAILABLE')
           }
           throw aiErr
         }
+        const processingMs = Date.now() - extractStart
 
         // ── STEP 5 : Parse + validate ─────────────────────────────────────────
-        let extractedData
-        try {
-          const clean = rawResponse.replace(/```json/g, '').replace(/```/g, '').trim()
-          extractedData = JSON.parse(clean)
-        } catch {
+        let extractedData = extractJSON(rawResponse)
+
+        // If parsing failed AND the result came from cache, the cache may hold a
+        // previously bad response. Retry once with a fresh AI call.
+        if (extractedData === null && aiProvider === 'cache') {
+          console.warn(`[Worker] Cache hit but JSON parse failed for ${docId} — retrying fresh`)
+          try {
+            const fresh = await aiExtract(fullPrompt, mimeType, base64, { maxTokens, useCache: false })
+            rawResponse = fresh.content
+            aiProvider  = fresh.provider
+            extractedData = extractJSON(rawResponse)
+          } catch (freshErr) {
+            if (freshErr.message === 'ALL_PROVIDERS_FAILED') throw new Error('SERVICE_UNAVAILABLE')
+            throw freshErr
+          }
+        }
+
+        if (extractedData === null) {
+          console.error(`[Worker] JSON parse failed for ${docId}. Raw (500 chars):`, rawResponse?.slice(0, 500))
           throw new Error("Le résultat de l'IA n'est pas formaté correctement.")
         }
 
@@ -195,7 +255,13 @@ export async function POST(request) {
         // ── STEP 6 : Store result ─────────────────────────────────────────────
         await prisma.document.update({
           where: { id: docId },
-          data: { statut: 'A_VERIFIER', donnees_extraites: extractedData, error_message: null },
+          data: {
+            statut:           'A_VERIFIER',
+            donnees_extraites: extractedData,
+            error_message:     null,
+            ai_provider:       aiProvider   ?? null,
+            processing_ms:     processingMs ?? null,
+          },
         })
 
       } catch (err) {

@@ -292,14 +292,14 @@ export default function LandingPage() {
 
           {/* Subtitle */}
           <p className="anim-sub text-lg sm:text-xl text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed mb-10" style={{ opacity: 0 }}>
-            Hesabi utilise <strong className="text-slate-800 dark:text-slate-200">Gemini 2.5</strong> pour lire, comprendre et structurer vos factures et relevés en quelques secondes. Fini les saisies manuelles interminables.
+            Hesabi utilise <strong className="text-slate-800 dark:text-slate-200">l'ia </strong> pour lire, comprendre et structurer vos factures et relevés en quelques secondes. Fini les saisies manuelles interminables.
           </p>
 
           {/* CTAs */}
           <div className="anim-cta flex flex-col sm:flex-row items-center justify-center gap-4" style={{ opacity: 0 }}>
             <Link href="/register">
               <button className="group bg-[#1D9E75] hover:bg-[#0F6E56] text-white rounded-full h-14 px-8 text-base font-bold shadow-[0_8px_32px_rgba(29,158,117,0.4)] transition-all hover:scale-105 hover:shadow-[0_12px_40px_rgba(29,158,117,0.5)] cursor-pointer">
-                Essayer la Bêta gratuite
+                Bêta gratuite
                 <ArrowRightIcon className="inline size-4 ml-2 group-hover:translate-x-1 transition-transform" />
               </button>
             </Link>

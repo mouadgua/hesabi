@@ -302,9 +302,12 @@ export async function validateDocumentAction(formData) {
     })
     if (!doc) throw new Error("Document introuvable ou accès refusé")
 
+    const compte_id = formData.get('compte_id') || null
+
     const donnees_extraites = {}
+    const SKIP_KEYS = new Set(['documentId', 'clientId', 'compte_id'])
     for (const [key, value] of formData.entries()) {
-        if (key !== 'documentId' && !key.startsWith('$ACTION')) {
+        if (!SKIP_KEYS.has(key) && !key.startsWith('$ACTION')) {
             try {
                 donnees_extraites[key] = JSON.parse(value)
             } catch {
@@ -317,6 +320,52 @@ export async function validateDocumentAction(formData) {
         where: { id: documentId },
         data: { statut: 'VALIDE', donnees_extraites }
     })
+
+    // Assign compte comptable if provided and valid for this cabinet
+    if (compte_id) {
+        const compte = await prisma.compteComptable.findFirst({
+            where: {
+                id: compte_id,
+                actif: true,
+                OR: [
+                    { cabinet_id: utilisateur.cabinet_id },
+                    { is_standard: true },
+                ],
+            },
+            select: { id: true },
+        })
+
+        if (compte) {
+            await prisma.documentCompteComptable.upsert({
+                where:  { document_id: documentId },
+                update: { compte_id: compte.id, source: 'VALIDATION_MANUELLE' },
+                create: { document_id: documentId, compte_id: compte.id, source: 'VALIDATION_MANUELLE' },
+            })
+
+            // Update CabinetAccountPreference learning loop
+            if (doc.document_type && doc.fournisseur_detecte) {
+                const fournisseur_key = doc.fournisseur_detecte.toLowerCase().trim().replace(/\s+/g, '_')
+                await prisma.cabinetAccountPreference.upsert({
+                    where: {
+                        cabinet_id_document_type_fournisseur_key: {
+                            cabinet_id: utilisateur.cabinet_id,
+                            document_type: doc.document_type,
+                            fournisseur_key,
+                        },
+                    },
+                    update: { compte_id: compte.id, use_count: { increment: 1 }, updatedAt: new Date() },
+                    create: {
+                        cabinet_id: utilisateur.cabinet_id,
+                        document_type: doc.document_type,
+                        fournisseur_key,
+                        compte_id: compte.id,
+                        use_count: 1,
+                        updatedAt: new Date(),
+                    },
+                })
+            }
+        }
+    }
 
     redirect('/dashboard/extraction')
 }

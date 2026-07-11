@@ -71,6 +71,39 @@ export default async function VerificationPage({ params }) {
         }))
       : false
 
+  // Plan comptable: load active comptes (cabinet custom first, then CGNC)
+  const comptes = await prisma.compteComptable.findMany({
+    where: {
+      actif: true,
+      OR: [
+        { cabinet_id: utilisateur.cabinet_id },
+        { is_standard: true },
+      ],
+    },
+    select: { id: true, code: true, libelle: true, classe: true, is_standard: true },
+    orderBy: [{ is_standard: 'asc' }, { code: 'asc' }],
+  })
+
+  // Suggestion from learning loop (CabinetAccountPreference)
+  const fournisseurKey = document.fournisseur_detecte?.toLowerCase().trim().replace(/\s+/g, '_') ?? null
+  const suggestionPref = fournisseurKey && document.document_type
+    ? await prisma.cabinetAccountPreference.findFirst({
+        where: {
+          cabinet_id: utilisateur.cabinet_id,
+          document_type: document.document_type,
+          fournisseur_key: fournisseurKey,
+        },
+        orderBy: { use_count: 'desc' },
+        select: { compte_id: true },
+      })
+    : null
+
+  // Existing compte assignment for this document (if already validated before)
+  const existingCompte = await prisma.documentCompteComptable.findUnique({
+    where: { document_id: document.id },
+    select: { compte_id: true },
+  })
+
   const backHref = document.client_id
     ? `/dashboard/extraction?clientId=${document.client_id}`
     : '/dashboard/extraction'
@@ -249,6 +282,9 @@ export default async function VerificationPage({ params }) {
                         ? Object.keys(document.template.structure_json)
                         : null
                     }
+                    comptes={comptes}
+                    suggestionCompteId={suggestionPref?.compte_id ?? null}
+                    existingCompteId={existingCompte?.compte_id ?? null}
                   />
                 )}
               </CardContent>

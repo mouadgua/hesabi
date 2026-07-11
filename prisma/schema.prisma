@@ -53,6 +53,8 @@ model Cabinet {
   utilisateurs        Utilisateur[]
   clients             Client[]
   templates           TemplateExtraction[]
+  comptes_comptables  CompteComptable[]
+  account_preferences CabinetAccountPreference[]
 }
 
 
@@ -129,6 +131,7 @@ model Document {
   template           TemplateExtraction? @relation(fields: [template_id], references: [id])
   dossier_id         String?  @db.Uuid
   dossier            Dossier? @relation(fields: [dossier_id], references: [id])
+  compte_comptable   DocumentCompteComptable?
 
   @@index([client_id, statut])
   @@index([statut, updatedAt])
@@ -234,6 +237,58 @@ model UserRating {
   createdAt DateTime @default(now())
 }
 
+// --- 12. PLAN COMPTABLE (CGNC) ---
+model CompteComptable {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cabinet_id   String?  @db.Uuid  // null = compte CGNC standard partagé
+  code         String
+  libelle      String
+  classe       Int                // 1-8
+  parent_id    String?  @db.Uuid
+  actif        Boolean  @default(true)
+  is_standard  Boolean  @default(false)
+
+  cabinet      Cabinet?              @relation(fields: [cabinet_id], references: [id], onDelete: Cascade)
+  parent       CompteComptable?      @relation("SousComptes", fields: [parent_id], references: [id])
+  sous_comptes CompteComptable[]     @relation("SousComptes")
+  documents    DocumentCompteComptable[]
+  preferences  CabinetAccountPreference[]
+
+  @@index([cabinet_id])
+  @@index([classe])
+  @@index([code])
+}
+
+model DocumentCompteComptable {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  document_id      String        @unique @db.Uuid
+  compte_id        String        @db.Uuid
+  source           CompteSource  @default(VALIDATION_MANUELLE)
+  confidence_score Float?
+  assignedAt       DateTime      @default(now())
+
+  document         Document        @relation(fields: [document_id], references: [id], onDelete: Cascade)
+  compte           CompteComptable @relation(fields: [compte_id], references: [id])
+
+  @@index([compte_id])
+}
+
+model CabinetAccountPreference {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cabinet_id     String   @db.Uuid
+  document_type  String
+  fournisseur_key String
+  compte_id      String   @db.Uuid
+  use_count      Int      @default(1)
+  updatedAt      DateTime @updatedAt
+
+  cabinet        Cabinet         @relation(fields: [cabinet_id], references: [id], onDelete: Cascade)
+  compte         CompteComptable @relation(fields: [compte_id], references: [id])
+
+  @@unique([cabinet_id, document_type, fournisseur_key])
+  @@index([cabinet_id])
+}
+
 // --- ÉNUMÉRATIONS ---
 enum DocumentStatut {
   A_EXTRAIRE
@@ -251,4 +306,9 @@ enum StatutClient {
 enum RoleUser {
   EXPERT_COMPTABLE
   COLLABORATEUR
+}
+
+enum CompteSource {
+  SUGGESTION_IA
+  VALIDATION_MANUELLE
 }

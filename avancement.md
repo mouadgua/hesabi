@@ -17,6 +17,7 @@
 | Page démo publique | ✅ Complet |
 | Dashboard admin | ✅ Complet |
 | Gestion des modèles d'extraction | ✅ Complet |
+| Plan comptable (CGNC + personnalisation) | ✅ Complet |
 | Sécurité & hardening | ✅ Complet (post-audit) |
 | Système de crédits | ✅ Corrigé (race condition fixée) |
 | Abonnement / Stripe | 🔴 Non démarré |
@@ -67,6 +68,15 @@
 - Corrections utilisateur enregistrées (`FieldCorrection`)
 - Au bout de 3 corrections identiques → création d'une préférence (`UserFieldPreference`)
 - Les préférences sont injectées dans le prompt d'extraction suivant
+
+### Plan comptable (CGNC)
+- 120+ comptes CGNC standard (classes 1-8) via `prisma/seed-cgnc.js`
+- Comptes personnalisés par cabinet (code, libellé, classe, actif)
+- Page de gestion `/dashboard/settings/plan-comptable` : tableau filtrable, ajout/édition/désactivation
+- Affectation de compte dans la page de vérification (`CompteCombobox`)
+- Learning loop : `CabinetAccountPreference` — suggestion automatique basée sur (type document + fournisseur)
+- Lien `DocumentCompteComptable` entre document et compte assigné
+- SQL migration : `prisma/add_plan_comptable.sql`
 
 ### Export
 - Export Excel (`.xlsx`) et CSV depuis la sélection de documents
@@ -217,7 +227,8 @@ app/
 │   └── settings/
 │       ├── profile/         Profil utilisateur
 │       ├── cabinet/         Infos cabinet (ICE, RIB, adresse…)
-│       └── billing/         Crédits + plan (Stripe à venir)
+│       ├── billing/         Crédits + plan (Stripe à venir)
+│       └── plan-comptable/  Plan CGNC + comptes cabinet
 │
 ├── admin/
 │   ├── page.jsx             Dashboard overview avec stats

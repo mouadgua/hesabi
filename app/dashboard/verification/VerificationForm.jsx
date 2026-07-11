@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { validateDocumentAction } from "@/app/dashboard/actions"
 import { SubmitButton } from "@/components/ui/submit-button"
 import MissingFieldFeedback from "@/components/MissingFieldFeedback"
-import { CheckCircleIcon, BrainCircuitIcon, EyeOffIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react"
+import { CheckCircleIcon, BrainCircuitIcon, EyeOffIcon, ChevronDownIcon, ChevronUpIcon, BookOpenIcon } from "lucide-react"
+import CompteCombobox from "@/components/CompteCombobox"
 
 // ── Field reconciliation ────────────────────────────────────────────────────
 
@@ -111,7 +112,15 @@ function FieldRow({ fieldKey, value, isExtra, isExcluded, onToggleExclude, onBlu
 
 // ── Main form ───────────────────────────────────────────────────────────────
 
-export default function VerificationForm({ document, extractedData, hasPreferences, modelFields }) {
+export default function VerificationForm({
+  document,
+  extractedData,
+  hasPreferences,
+  modelFields,
+  comptes = [],
+  suggestionCompteId = null,
+  existingCompteId = null,
+}) {
   const originalValues = useRef(
     Object.fromEntries(
       Object.entries(extractedData).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : String(v ?? '')])
@@ -121,6 +130,7 @@ export default function VerificationForm({ document, extractedData, hasPreferenc
   const { main, extras } = reconcileFields(extractedData, modelFields)
   const [excludedFields, setExcludedFields] = useState([])
   const [extrasOpen, setExtrasOpen] = useState(false)
+  const [selectedCompteId, setSelectedCompteId] = useState(existingCompteId ?? suggestionCompteId ?? null)
   const hasExtras = Object.keys(extras).length > 0
 
   async function trackCorrection(fieldName, currentValue) {
@@ -218,6 +228,29 @@ export default function VerificationForm({ document, extractedData, hasPreferenc
       <div className="border-t border-slate-100 dark:border-white/[0.06] pt-3 pb-1">
         <MissingFieldFeedback documentId={document.id} documentType={document.document_type} />
       </div>
+
+      {/* Plan comptable */}
+      {comptes.length > 0 && (
+        <div className="border-t border-slate-100 dark:border-white/[0.06] pt-4 space-y-2">
+          <Label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+            <BookOpenIcon className="w-3.5 h-3.5" />
+            Compte comptable
+            {suggestionCompteId && !existingCompteId && (
+              <Badge className="bg-[#E1F5EE] dark:bg-[#1D9E75]/10 text-[#1D9E75] border-[#A8DCC9] dark:border-[#1D9E75]/20 text-[9px] font-bold px-1 py-0 h-4 ml-1">
+                Suggéré
+              </Badge>
+            )}
+          </Label>
+          <CompteCombobox
+            comptes={comptes}
+            value={selectedCompteId}
+            onChange={setSelectedCompteId}
+            suggestionId={suggestionCompteId}
+            placeholder="Affecter un compte..."
+          />
+          <input type="hidden" name="compte_id" value={selectedCompteId ?? ''} />
+        </div>
+      )}
 
       {/* Sticky footer — dark mode aware */}
       <div className="pt-2 mt-auto border-t border-slate-100 dark:border-white/[0.06] flex gap-3 sticky bottom-0 bg-white/95 dark:bg-slate-900/95 backdrop-blur-sm pb-2 shrink-0 z-10">

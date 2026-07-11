@@ -9,7 +9,7 @@ import {
   HomeIcon, SparklesIcon, FolderIcon, BellIcon,
   Settings2Icon, CreditCardIcon, CircleHelpIcon, CommandIcon, LogOutIcon,
   ChevronRightIcon, PlusIcon, PencilIcon, Trash2Icon, CheckIcon, XIcon,
-  UsersIcon, ShieldIcon,
+  UsersIcon, ShieldIcon, BookOpenIcon,
 } from "lucide-react"
 
 const ADMIN_EMAIL = 'mouadguarraz@gmail.com'
@@ -28,6 +28,7 @@ const navTop = [
 
 const navBottom = [
   { title: "Paramètres", url: "/dashboard/settings", icon: Settings2Icon, exact: true },
+  { title: "Plan comptable", url: "/dashboard/settings/plan-comptable", icon: BookOpenIcon },
   { title: "Abonnement", url: "/dashboard/settings/billing", icon: CreditCardIcon },
   { title: "Support & Aide", url: "/dashboard/support", icon: CircleHelpIcon },
 ]

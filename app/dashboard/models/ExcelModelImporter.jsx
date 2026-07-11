@@ -21,22 +21,22 @@ export default function ExcelModelImporter() {
   async function handleFile(e) {
     const file = e.target.files[0]
     if (!file) return
-    const XLSX = await import("xlsx")
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const wb = XLSX.read(ev.target.result, { type: "binary" })
-        const ws = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 })
-        const headers = (rows[0] || []).map(String).filter(Boolean)
-        if (headers.length === 0) { toast.error("Aucun en-tête trouvé dans ce fichier."); return }
-        setColumns(headers)
-        setStep("edit")
-      } catch {
-        toast.error("Impossible de lire ce fichier Excel.")
-      }
+
+    const fd = new FormData()
+    fd.append('file', file)
+
+    const toastId = toast.loading('Lecture du fichier…')
+    try {
+      const res = await fetch('/api/parse-excel-headers', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Impossible de lire ce fichier.', { id: toastId }); return }
+      if (!data.headers?.length) { toast.error('Aucun en-tête trouvé dans ce fichier.', { id: toastId }); return }
+      toast.dismiss(toastId)
+      setColumns(data.headers)
+      setStep('edit')
+    } catch {
+      toast.error('Erreur réseau lors de la lecture du fichier.', { id: toastId })
     }
-    reader.readAsBinaryString(file)
   }
 
   function removeColumn(idx) {
@@ -106,7 +106,7 @@ export default function ExcelModelImporter() {
             Modèle depuis un fichier Excel
           </DialogTitle>
           <DialogDescription>
-            Importez un fichier .xlsx — les en-têtes de colonnes deviendront automatiquement les champs du modèle.
+            Importez un fichier .xlsx ou .csv — les en-têtes de colonnes deviendront automatiquement les champs du modèle.
           </DialogDescription>
         </DialogHeader>
 
@@ -117,10 +117,10 @@ export default function ExcelModelImporter() {
               onClick={() => fileRef.current?.click()}
             >
               <FileSpreadsheetIcon className="w-10 h-10 text-emerald-400" />
-              <p className="text-sm font-medium text-emerald-800">Cliquez pour sélectionner un fichier .xlsx</p>
+              <p className="text-sm font-medium text-emerald-800">Cliquez pour sélectionner un fichier .xlsx ou .csv</p>
               <p className="text-xs text-emerald-600">La première ligne doit contenir les en-têtes de colonnes</p>
             </div>
-            <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
+            <input ref={fileRef} type="file" accept=".xlsx,.csv" className="hidden" onChange={handleFile} />
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5 pt-4">

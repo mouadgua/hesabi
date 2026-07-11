@@ -53,6 +53,7 @@ model Cabinet {
   utilisateurs        Utilisateur[]
   clients             Client[]
   templates           TemplateExtraction[]
+  export_templates    ExportTemplate[]
 }
 
 
@@ -232,6 +233,20 @@ model UserRating {
   comment   String?  @db.Text
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+// --- 12. EXPORT TEMPLATES (saved column configs) ---
+model ExportTemplate {
+  id         String   @id @default(cuid())
+  cabinet_id String   @db.Uuid
+  name       String
+  config     Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  cabinet    Cabinet  @relation(fields: [cabinet_id], references: [id], onDelete: Cascade)
+
+  @@index([cabinet_id])
 }
 
 // --- ÉNUMÉRATIONS ---

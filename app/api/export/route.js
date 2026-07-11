@@ -1,9 +1,9 @@
+import ExcelJS from 'exceljs'
 import prisma from '@/lib/prisma'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import * as XLSX from 'xlsx'
 
-// ── Field name translations ────────────────────────────────────────────────────
+// ── Field translations ─────────────────────────────────────────────────────────
 const FIELD_LABELS = {
   fournisseur:     { fr: 'Fournisseur',      en: 'Supplier'           },
   date_facture:    { fr: 'Date Facture',      en: 'Invoice Date'       },
@@ -44,9 +44,239 @@ function colLabel(key, lang) {
   return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
+// Safe arithmetic formula: only "field1+field2" or "field1-field2" patterns
+function evalFormula(formula, data) {
+  const m = /^([a-z_]{1,50})([+-])([a-z_]{1,50})$/.exec((formula || '').trim())
+  if (!m) return null
+  const v1 = Number(data[m[1]]) || 0
+  const v2 = Number(data[m[3]]) || 0
+  return Number((m[2] === '+' ? v1 + v2 : v1 - v2).toFixed(4))
+}
+
+// ── Config parsing ─────────────────────────────────────────────────────────────
+function parseConfig(formData) {
+  const raw = formData.get('config')
+  if (raw) {
+    try {
+      const cfg = JSON.parse(raw)
+      return {
+        preset:   ['simple', 'par_mois', 'par_compte', 'personnalise'].includes(cfg.preset) ? cfg.preset : 'simple',
+        lang:     cfg.lang === 'en' ? 'en' : 'fr',
+        columns:  Array.isArray(cfg.columns)
+          ? cfg.columns
+              .filter(c => typeof c?.key === 'string' && /^(_calc_\d+|[a-z_]{1,50})$/.test(c.key))
+              .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+              .slice(0, 30)
+          : [],
+        groupBy:  Array.isArray(cfg.groupBy)
+          ? cfg.groupBy.filter(g => ['mois', 'fournisseur', 'categorie'].includes(g)).slice(0, 1)
+          : [],
+        subtotals: cfg.subtotals === true,
+      }
+    } catch { /* fall through to legacy */ }
+  }
+
+  // Legacy: columns is JSON array of strings
+  const lang = formData.get('lang') === 'en' ? 'en' : 'fr'
+  try {
+    const cols = JSON.parse(formData.get('columns') || '[]')
+    const columns = Array.isArray(cols)
+      ? cols
+          .filter(c => typeof c === 'string' && /^[a-z_]{1,50}$/.test(c))
+          .map((key, i) => ({ key, label: colLabel(key, lang), order: i, include: true }))
+      : []
+    return { preset: 'simple', lang, columns, groupBy: [], subtotals: false }
+  } catch {}
+
+  return { preset: 'simple', lang: 'fr', columns: [], groupBy: [], subtotals: false }
+}
+
+// ── Row builder ────────────────────────────────────────────────────────────────
+const NUMERIC_KW = ['montant', 'total', '_ht', '_ttc', '_tva', 'debit', 'credit', 'solde', 'prix', 'quantite', 'amount', 'balance', 'ouverture', 'cloture']
+
+function isNumericKey(key) {
+  return NUMERIC_KW.some(kw => key.includes(kw))
+}
+
+function buildDocRow(doc, colDefs, lang) {
+  const data = doc.donnees_extraites || {}
+  const STATUT = lang === 'en'
+    ? { A_EXTRAIRE: 'Pending', EN_COURS_IA: 'Processing', A_VERIFIER: 'To Review', VALIDE: 'Validated', REJETE: 'Rejected' }
+    : { A_EXTRAIRE: 'En attente', EN_COURS_IA: 'En cours', A_VERIFIER: 'À vérifier', VALIDE: 'Validé', REJETE: 'Rejeté' }
+
+  const row = {
+    __nom:    doc.nom_fichier || doc.id,
+    __date:   new Date(doc.createdAt).toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR'),
+    __statut: STATUT[doc.statut] ?? doc.statut,
+  }
+
+  const detailLines = []
+
+  for (const col of colDefs) {
+    if (col.formula) {
+      const val = evalFormula(col.formula, data)
+      row[col.key] = val !== null ? val : ''
+      continue
+    }
+
+    let val = data[col.key]
+    if (typeof val === 'string' && val.trim().startsWith('[')) {
+      try { val = JSON.parse(val) } catch {}
+    }
+
+    if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object') {
+      detailLines.push({ colKey: col.key, label: col.label || colLabel(col.key, lang), rows: val })
+      row[col.key] = lang === 'en' ? '[See Details]' : '[Voir Détails]'
+    } else {
+      if (val === null || val === undefined) val = ''
+      if (typeof val === 'object') val = JSON.stringify(val)
+      row[col.key] = val
+    }
+  }
+
+  return { row, detailLines }
+}
+
+// ── Grouping ───────────────────────────────────────────────────────────────────
+function getGroupKey(doc, groupBy, lang) {
+  const data = doc.donnees_extraites || {}
+  const dim  = groupBy[0]
+
+  if (dim === 'mois') {
+    const dateStr = data.date_facture || data.date || doc.createdAt
+    const d = new Date(dateStr)
+    if (!isNaN(d.getTime())) {
+      const sortKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const label   = d.toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR', { month: 'long', year: 'numeric' })
+      return { sortKey, label: label.charAt(0).toUpperCase() + label.slice(1) }
+    }
+    return { sortKey: '9999-99', label: lang === 'en' ? 'Unknown date' : 'Date inconnue' }
+  }
+
+  if (dim === 'fournisseur') {
+    const v = (data.fournisseur || data.emetteur || '').trim()
+    return { sortKey: v.toLowerCase() || 'zz', label: v || (lang === 'en' ? 'Unknown supplier' : 'Fournisseur inconnu') }
+  }
+
+  if (dim === 'categorie') {
+    const v = (data.categorie || '').trim()
+    return { sortKey: v.toLowerCase() || 'zz', label: v || (lang === 'en' ? 'Other' : 'Autre') }
+  }
+
+  return { sortKey: '', label: '' }
+}
+
+function groupDocuments(documents, groupBy, lang) {
+  if (!groupBy.length) return [{ label: null, docs: documents }]
+
+  const map = new Map()
+  for (const doc of documents) {
+    const { sortKey, label } = getGroupKey(doc, groupBy, lang)
+    if (!map.has(sortKey)) map.set(sortKey, { label, docs: [] })
+    map.get(sortKey).docs.push(doc)
+  }
+
+  return [...map.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, g]) => g)
+}
+
+// ── Excel sheet builder ────────────────────────────────────────────────────────
+const GREEN  = 'FF1D9E75'
+const GREEN2 = 'FFD1FAE5'
+const WHITE  = 'FFFFFFFF'
+const STRIPE = 'FFF8FAFC'
+
+function buildExcelSheet(workbook, sheetName, baseHeaders, colDefs, lang, docGroups, subtotals) {
+  const ws = workbook.addWorksheet(sheetName.slice(0, 31))
+
+  const colConfigs = [
+    { header: baseHeaders[0], key: '__nom',    width: 28 },
+    { header: baseHeaders[1], key: '__date',   width: 14 },
+    { header: baseHeaders[2], key: '__statut', width: 14 },
+    ...colDefs.map(c => ({
+      header: c.label || colLabel(c.key, lang),
+      key:    c.key,
+      width:  Math.max(16, (c.label || c.key).length + 4),
+    })),
+  ]
+  ws.columns = colConfigs
+
+  // Style header row
+  const hdr = ws.getRow(1)
+  hdr.font      = { bold: true, color: { argb: WHITE } }
+  hdr.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: GREEN } }
+  hdr.alignment = { vertical: 'middle', horizontal: 'left' }
+  hdr.height    = 22
+  ws.views      = [{ state: 'frozen', ySplit: 1 }]
+
+  const numericColKeys = colDefs.filter(c => isNumericKey(c.key)).map(c => c.key)
+  const isGrouped      = docGroups.length > 1 || (docGroups.length === 1 && docGroups[0].label !== null)
+
+  for (const group of docGroups) {
+    // Precompute rows for the group
+    const allDetailLines = []
+    const dataRows = group.docs.map(doc => {
+      const { row, detailLines } = buildDocRow(doc, colDefs, lang)
+      allDetailLines.push(...detailLines.map(dl => ({ nom: doc.nom_fichier || doc.id, ...dl })))
+      return {
+        __nom:    row.__nom,
+        __date:   row.__date,
+        __statut: row.__statut,
+        ...Object.fromEntries(colDefs.map(c => [c.key, row[c.key] ?? ''])),
+      }
+    })
+
+    // Group header band
+    if (isGrouped && group.label) {
+      const ghRow = ws.addRow({})
+      ghRow.getCell(1).value     = group.label.toUpperCase()
+      ghRow.getCell(1).font      = { bold: true, color: { argb: WHITE } }
+      ghRow.fill                 = { type: 'pattern', pattern: 'solid', fgColor: { argb: GREEN } }
+      ghRow.height               = 18
+      ws.mergeCells(ghRow.number, 1, ghRow.number, colConfigs.length)
+    }
+
+    // Data rows
+    dataRows.forEach((rowObj, i) => {
+      const dr = ws.addRow(rowObj)
+      if (i % 2 === 1) {
+        dr.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STRIPE } }
+      }
+      numericColKeys.forEach(k => {
+        const cell = dr.getCell(k)
+        if (typeof rowObj[k] === 'number') cell.numFmt = '#,##0.00'
+      })
+    })
+
+    // Subtotal row
+    if (subtotals && numericColKeys.length > 0 && isGrouped && dataRows.length > 0) {
+      const sums = {}
+      numericColKeys.forEach(k => {
+        sums[k] = dataRows.reduce((s, r) => s + (Number(r[k]) || 0), 0)
+      })
+
+      const totalRow = ws.addRow({
+        __nom: lang === 'en' ? `Total — ${group.label}` : `Total — ${group.label}`,
+        ...sums,
+      })
+      totalRow.font = { bold: true }
+      totalRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: GREEN2 } }
+      numericColKeys.forEach(k => {
+        totalRow.getCell(k).numFmt = '#,##0.00'
+      })
+
+      // Spacer between groups
+      ws.addRow({})
+    }
+  }
+
+  return ws
+}
+
+// ── Main handler ───────────────────────────────────────────────────────────────
 export async function POST(request) {
   try {
-    // ── Auth ─────────────────────────────────────────────────────────────────
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return new NextResponse('Non autorisé', { status: 401 })
@@ -56,98 +286,71 @@ export async function POST(request) {
     })
     if (!utilisateur?.cabinet_id) return new NextResponse('Cabinet introuvable', { status: 403 })
 
-    // ── Parse input ───────────────────────────────────────────────────────────
     const formData = await request.formData()
-    const rawIds = formData.getAll('documentIds')
-    const format  = formData.get('format') || 'csv'
-    const lang    = formData.get('lang') === 'en' ? 'en' : 'fr'
+    const format   = formData.get('format') || 'csv'
 
-    // Sanitize documentIds — UUID format only
+    const cfg = parseConfig(formData)
+    const { lang, columns: colDefs, groupBy, subtotals } = cfg
+
+    const rawIds     = formData.getAll('documentIds')
     const documentIds = rawIds.filter(id => typeof id === 'string' && /^[0-9a-f-]{36}$/.test(id))
     if (documentIds.length === 0) return new NextResponse('Aucun document sélectionné.', { status: 400 })
 
-    // Sanitize columns — only allow snake_case keys, max 30 columns
-    let requestedColumns = []
-    try {
-      const parsed = JSON.parse(formData.get('columns') || '[]')
-      requestedColumns = Array.isArray(parsed)
-        ? parsed.filter(c => typeof c === 'string' && /^[a-z_]{1,50}$/.test(c)).slice(0, 30)
-        : []
-    } catch { /* fallback to empty */ }
-
-    // ── Fetch documents — scoped to cabinet (IDOR prevention) ─────────────────
     const documents = await prisma.document.findMany({
       where: { id: { in: documentIds }, client: { cabinet_id: utilisateur.cabinet_id } }
     })
     if (documents.length === 0) return new NextResponse('Documents introuvables.', { status: 404 })
 
-    // ── Build rows ────────────────────────────────────────────────────────────
     const BASE_HEADERS = lang === 'en'
       ? ['File Name', 'Import Date', 'Status']
       : ['Nom du Fichier', "Date d'import", 'Statut']
 
-    const mainHeaders = [
-      ...BASE_HEADERS,
-      ...requestedColumns.map(c => colLabel(c, lang)),
-    ]
-    const mainRows    = []
-    const detailedLines = []
+    const docGroups = groupDocuments(documents, groupBy, lang)
 
-    for (const doc of documents) {
-      const data = doc.donnees_extraites || {}
-      const STATUT_MAP = lang === 'en'
-        ? { A_EXTRAIRE: 'Pending', EN_COURS_IA: 'Processing', A_VERIFIER: 'To Review', VALIDE: 'Validated', REJETE: 'Rejected' }
-        : { A_EXTRAIRE: 'En attente', EN_COURS_IA: 'En cours', A_VERIFIER: 'À vérifier', VALIDE: 'Validé', REJETE: 'Rejeté' }
+    // ── Excel ────────────────────────────────────────────────────────────────
+    if (format === 'excel') {
+      const workbook    = new ExcelJS.Workbook()
+      workbook.creator  = 'Hesabi'
+      workbook.created  = new Date()
 
-      const row  = [
-        doc.nom_fichier || doc.id,
-        new Date(doc.createdAt).toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR'),
-        STATUT_MAP[doc.statut] ?? doc.statut,
-      ]
+      const mainName = lang === 'en' ? 'General Data' : 'Données Générales'
+      buildExcelSheet(workbook, mainName, BASE_HEADERS, colDefs, lang, docGroups, subtotals)
 
-      for (const col of requestedColumns) {
-        let val = data[col]
-
-        if (typeof val === 'string' && val.trim().startsWith('[') && val.trim().endsWith(']')) {
-          try { val = JSON.parse(val) } catch { /* keep as string */ }
-        }
-
-        if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object') {
-          val.forEach(item => detailedLines.push({
-            [lang === 'en' ? 'SOURCE FILE' : 'FICHIER SOURCE']: doc.nom_fichier || doc.id,
-            [lang === 'en' ? 'LINE TYPE'   : 'TYPE LIGNE']:     colLabel(col, lang).toUpperCase(),
-            ...item,
-          }))
-          row.push(lang === 'en' ? '[See Details tab]' : '[Voir onglet Détails]')
-        } else {
-          if (val === null || val === undefined) val = ''
-          if (typeof val === 'object') val = JSON.stringify(val)
-          row.push(val)
+      // Collect all detail lines for the second sheet
+      const allDetailLines = []
+      for (const group of docGroups) {
+        for (const doc of group.docs) {
+          const { detailLines } = buildDocRow(doc, colDefs, lang)
+          detailLines.forEach(dl => {
+            dl.rows.forEach(r => allDetailLines.push({
+              [lang === 'en' ? 'SOURCE FILE' : 'FICHIER SOURCE']: doc.nom_fichier || doc.id,
+              [lang === 'en' ? 'LINE TYPE'   : 'TYPE LIGNE'    ]: dl.label.toUpperCase(),
+              ...r,
+            }))
+          })
         }
       }
-      mainRows.push(row)
-    }
 
-    // ── Excel ─────────────────────────────────────────────────────────────────
-    if (format === 'excel') {
-      const wb = XLSX.utils.book_new()
-
-      const mainWs = XLSX.utils.aoa_to_sheet([mainHeaders, ...mainRows])
-      mainWs['!cols'] = mainHeaders.map(h => ({ wch: Math.max(20, h.length + 5) }))
-      XLSX.utils.book_append_sheet(wb, mainWs, lang === 'en' ? 'General Data' : 'Données Générales')
-
-      if (detailedLines.length > 0) {
-        const detailKeys    = [...new Set(detailedLines.flatMap(l => Object.keys(l)))]
-        const detailHeaders = detailKeys
-        const detailRows    = detailedLines.map(l => detailHeaders.map(k => l[k] ?? ''))
-        const detailWs      = XLSX.utils.aoa_to_sheet([detailHeaders.map(h => h.replace(/_/g, ' ').toUpperCase()), ...detailRows])
-        detailWs['!cols']   = detailHeaders.map(h => ({ wch: Math.max(15, h.length + 5) }))
-        XLSX.utils.book_append_sheet(wb, detailWs, lang === 'en' ? 'Detailed Lines' : 'Lignes Détaillées')
+      if (allDetailLines.length > 0) {
+        const detailName = lang === 'en' ? 'Detailed Lines' : 'Lignes Détaillées'
+        const dws        = workbook.addWorksheet(detailName)
+        const detailKeys = [...new Set(allDetailLines.flatMap(l => Object.keys(l)))]
+        dws.columns      = detailKeys.map(k => ({
+          header: k.replace(/_/g, ' ').toUpperCase(),
+          key:    k,
+          width:  Math.max(15, k.length + 4),
+        }))
+        allDetailLines.forEach(r => dws.addRow(r))
+        const dhdr    = dws.getRow(1)
+        dhdr.font     = { bold: true, color: { argb: WHITE } }
+        dhdr.fill     = { type: 'pattern', pattern: 'solid', fgColor: { argb: GREEN } }
+        dhdr.height   = 22
+        dws.views     = [{ state: 'frozen', ySplit: 1 }]
       }
 
       const filename = lang === 'en' ? 'Accounting_Export.xlsx' : 'Export_Comptable.xlsx'
-      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
-      return new NextResponse(buf, {
+      const buf      = await workbook.xlsx.writeBuffer()
+      return new NextResponse(Buffer.from(buf), {
         headers: {
           'Content-Type':        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           'Content-Disposition': `attachment; filename="${filename}"`,
@@ -155,11 +358,29 @@ export async function POST(request) {
       })
     }
 
-    // ── CSV ───────────────────────────────────────────────────────────────────
-    const lines = [mainHeaders.map(h => `"${h}"`).join(';')]
-    mainRows.forEach(row => {
-      lines.push(row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(';'))
-    })
+    // ── CSV (always flat — grouping not applied) ───────────────────────────
+    const headerRow = [
+      ...BASE_HEADERS,
+      ...colDefs.map(c => c.label || colLabel(c.key, lang)),
+    ]
+    const lines = [headerRow.map(h => `"${h}"`).join(';')]
+
+    for (const doc of documents) {
+      const { row } = buildDocRow(doc, colDefs, lang)
+      const vals    = [
+        row.__nom,
+        row.__date,
+        row.__statut,
+        ...colDefs.map(c => {
+          const v = row[c.key]
+          if (v === null || v === undefined) return ''
+          if (typeof v === 'object') return JSON.stringify(v)
+          return String(v)
+        }),
+      ]
+      lines.push(vals.map(v => `"${String(v).replace(/"/g, '""')}"`).join(';'))
+    }
+
     const csvFilename = lang === 'en' ? 'Accounting_Export.csv' : 'Export_Comptable.csv'
     return new NextResponse('﻿' + lines.join('\n'), {
       headers: {
@@ -169,7 +390,7 @@ export async function POST(request) {
     })
 
   } catch (err) {
-    console.error("Erreur export:", err)
+    console.error('Erreur export:', err)
     return new NextResponse("Erreur serveur lors de l'export.", { status: 500 })
   }
 }

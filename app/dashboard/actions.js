@@ -321,49 +321,52 @@ export async function validateDocumentAction(formData) {
         data: { statut: 'VALIDE', donnees_extraites }
     })
 
-    // Assign compte comptable if provided and valid for this cabinet
+    // Assign compte comptable if provided — graceful fallback if migration not yet applied
     if (compte_id) {
-        const compte = await prisma.compteComptable.findFirst({
-            where: {
-                id: compte_id,
-                actif: true,
-                OR: [
-                    { cabinet_id: utilisateur.cabinet_id },
-                    { is_standard: true },
-                ],
-            },
-            select: { id: true },
-        })
-
-        if (compte) {
-            await prisma.documentCompteComptable.upsert({
-                where:  { document_id: documentId },
-                update: { compte_id: compte.id, source: 'VALIDATION_MANUELLE' },
-                create: { document_id: documentId, compte_id: compte.id, source: 'VALIDATION_MANUELLE' },
+        try {
+            const compte = await prisma.compteComptable.findFirst({
+                where: {
+                    id: compte_id,
+                    actif: true,
+                    OR: [
+                        { cabinet_id: utilisateur.cabinet_id },
+                        { is_standard: true },
+                    ],
+                },
+                select: { id: true },
             })
 
-            // Update CabinetAccountPreference learning loop
-            if (doc.document_type && doc.fournisseur_detecte) {
-                const fournisseur_key = doc.fournisseur_detecte.toLowerCase().trim().replace(/\s+/g, '_')
-                await prisma.cabinetAccountPreference.upsert({
-                    where: {
-                        cabinet_id_document_type_fournisseur_key: {
+            if (compte) {
+                await prisma.documentCompteComptable.upsert({
+                    where:  { document_id: documentId },
+                    update: { compte_id: compte.id, source: 'VALIDATION_MANUELLE' },
+                    create: { document_id: documentId, compte_id: compte.id, source: 'VALIDATION_MANUELLE' },
+                })
+
+                if (doc.document_type && doc.fournisseur_detecte) {
+                    const fournisseur_key = doc.fournisseur_detecte.toLowerCase().trim().replace(/\s+/g, '_')
+                    await prisma.cabinetAccountPreference.upsert({
+                        where: {
+                            cabinet_id_document_type_fournisseur_key: {
+                                cabinet_id: utilisateur.cabinet_id,
+                                document_type: doc.document_type,
+                                fournisseur_key,
+                            },
+                        },
+                        update: { compte_id: compte.id, use_count: { increment: 1 }, updatedAt: new Date() },
+                        create: {
                             cabinet_id: utilisateur.cabinet_id,
                             document_type: doc.document_type,
                             fournisseur_key,
+                            compte_id: compte.id,
+                            use_count: 1,
+                            updatedAt: new Date(),
                         },
-                    },
-                    update: { compte_id: compte.id, use_count: { increment: 1 }, updatedAt: new Date() },
-                    create: {
-                        cabinet_id: utilisateur.cabinet_id,
-                        document_type: doc.document_type,
-                        fournisseur_key,
-                        compte_id: compte.id,
-                        use_count: 1,
-                        updatedAt: new Date(),
-                    },
-                })
+                    })
+                }
             }
+        } catch {
+            // Migration not yet applied — skip compte assignment silently
         }
     }
 

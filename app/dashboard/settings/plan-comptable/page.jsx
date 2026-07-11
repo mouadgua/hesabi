@@ -18,20 +18,19 @@ export default async function PlanComptablePage() {
 
   const { cabinet_id } = utilisateur
 
-  // Load all active comptes: cabinet custom first, then CGNC standards
-  const comptes = await prisma.compteComptable.findMany({
-    where: {
-      actif: true,
-      OR: [
-        { cabinet_id },
-        { is_standard: true },
-      ],
-    },
-    orderBy: [
-      { is_standard: 'asc' },  // cabinet custom first (is_standard=false sorts before true)
-      { code: 'asc' },
-    ],
-  })
+  let comptes = []
+  let migrationPending = false
+  try {
+    comptes = await prisma.compteComptable.findMany({
+      where: {
+        actif: true,
+        OR: [{ cabinet_id }, { is_standard: true }],
+      },
+      orderBy: [{ is_standard: 'asc' }, { code: 'asc' }],
+    })
+  } catch {
+    migrationPending = true
+  }
 
   return (
     <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-8">
@@ -42,7 +41,14 @@ export default async function PlanComptablePage() {
         </p>
       </div>
 
-      <PlanComptableClient comptes={comptes} cabinetId={cabinet_id} />
+      {migrationPending ? (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/5 p-5 text-sm text-amber-800 dark:text-amber-300 space-y-2">
+          <p className="font-semibold">Migration SQL en attente</p>
+          <p>Exécutez <code className="font-mono text-xs bg-amber-100 dark:bg-amber-500/10 px-1 rounded">prisma/add_plan_comptable.sql</code> dans l'éditeur SQL Supabase pour activer cette fonctionnalité.</p>
+        </div>
+      ) : (
+        <PlanComptableClient comptes={comptes} cabinetId={cabinet_id} />
+      )}
     </div>
   )
 }

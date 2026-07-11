@@ -47,11 +47,15 @@ export async function proxy(request) {
         },
       }
     )
-    const { data } = await supabase.auth.getUser()
+    const { data, error } = await supabase.auth.getUser()
+    if (error?.code === 'refresh_token_not_found' || error?.code === 'bad_jwt') {
+      // Stale session after project restore — supabase client already cleared cookies via setAll
+      console.warn('[proxy] Stale session cleared:', error.code)
+    }
     user = data.user
   } catch (err) {
-    // Supabase unreachable (DNS/network) — treat as unauthenticated
-    console.error('[proxy] Supabase auth check failed:', err.code ?? err.message)
+    // Supabase unreachable (DNS / network error) — treat as unauthenticated
+    console.error('[proxy] Supabase unreachable:', err.code ?? err.message)
   }
 
   // ── Admin route protection ────────────────────────────────────────────────────

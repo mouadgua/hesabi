@@ -17,9 +17,8 @@ export async function createClient() {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             )
-          } catch (error) {
-            // Cette erreur peut être ignorée en toute sécurité si la méthode
-            // est appelée depuis un Server Component.
+          } catch {
+            // Safe to ignore when called from a Server Component (read-only context)
           }
         },
       },

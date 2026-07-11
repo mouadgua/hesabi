@@ -21,17 +21,25 @@ export async function uploadToDriveAction(formData) {
 
     if (!files || files.length === 0) return
 
-    // 1. Récupérer le cabinet pour vérifier les crédits
+    // 1. Vérifier que le client existe et récupérer le cabinet_id
     const client = await prisma.client.findUnique({
         where: { id: clientId },
-        include: { cabinet: true }
+        select: { cabinet_id: true }
     })
 
     if (!client) throw new Error("Client introuvable")
 
-    // 2. Vérification stricte des crédits côté serveur
-    if (client.cabinet.credits < files.length) {
-        throw new Error(`Crédits insuffisants. Il vous reste ${client.cabinet.credits} extractions, mais vous essayez d'envoyer ${files.length} fichiers.`)
+    // 2. Déduction atomique des crédits — check + decrement en une seule requête
+    // Empêche la race condition (2 onglets simultanés consommant plus que le quota)
+    const creditResult = await prisma.cabinet.updateMany({
+        where: { id: client.cabinet_id, credits: { gte: files.length } },
+        data:  { credits: { decrement: files.length } },
+    })
+    if (creditResult.count === 0) {
+        const current = await prisma.cabinet.findUnique({
+            where: { id: client.cabinet_id }, select: { credits: true }
+        })
+        throw new Error(`Crédits insuffisants. Il vous reste ${current?.credits ?? 0} extractions, mais vous essayez d'envoyer ${files.length} fichiers.`)
     }
 
     // 3. Boucle d'upload des fichiers vers Supabase
@@ -59,14 +67,6 @@ export async function uploadToDriveAction(formData) {
             }
         })
     }
-
-    // 4. DÉDUCTION DES CRÉDITS (On retire le nombre exact de fichiers envoyés)
-    await prisma.cabinet.update({
-        where: { id: client.cabinet_id },
-        data: {
-            credits: { decrement: files.length }
-        }
-    })
 
     revalidatePath('/dashboard/extraction')
 }
@@ -116,6 +116,7 @@ export async function extractDocumentsAction(formData) {
 
     const templateId = formData.get('template_id')
     const documentIds = formData.getAll('documentIds')
+    const lang = ['fr', 'en'].includes(formData.get('lang')) ? formData.get('lang') : 'fr'
 
     if (!templateId) throw new Error("Veuillez sélectionner un modèle d'extraction.")
     if (!documentIds || documentIds.length === 0) throw new Error("Veuillez sélectionner au moins un document.")
@@ -153,6 +154,7 @@ export async function extractDocumentsAction(formData) {
                 templateId,
                 userId:    user.id,
                 cabinetId: utilisateur.cabinet_id,
+                lang,
             }),
         }).catch(err => console.error("Erreur lancement worker:", err))
 
@@ -385,7 +387,7 @@ export async function createTemplateFromImageAction(formData) {
             `Génère une structure JSON où les clés sont les noms des champs en snake_case (ex: date_facture, montant_ht, tva, nom_fournisseur) et les valeurs sont null. ` +
             `Renvoie UNIQUEMENT un objet JSON valide, sans texte avant ni après, et sans markdown.`
 
-        const raw = await aiExtract(prompt, mimeType, base64Image, { maxTokens: 400, useCache: false })
+        const { content: raw } = await aiExtract(prompt, mimeType, base64Image, { maxTokens: 400, useCache: false })
         const structureJson = JSON.parse(raw.replace(/```json/g, '').replace(/```/g, '').trim())
 
         await prisma.templateExtraction.create({

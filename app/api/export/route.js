@@ -3,6 +3,47 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import * as XLSX from 'xlsx'
 
+// ── Field name translations ────────────────────────────────────────────────────
+const FIELD_LABELS = {
+  fournisseur:     { fr: 'Fournisseur',      en: 'Supplier'           },
+  date_facture:    { fr: 'Date Facture',      en: 'Invoice Date'       },
+  numero_facture:  { fr: 'N° Facture',        en: 'Invoice Number'     },
+  montant_ht:      { fr: 'Montant HT',        en: 'Amount Excl. Tax'   },
+  montant_tva:     { fr: 'TVA',               en: 'Tax Amount'         },
+  taux_tva:        { fr: 'Taux TVA',          en: 'Tax Rate'           },
+  montant_ttc:     { fr: 'Montant TTC',       en: 'Amount Incl. Tax'   },
+  ice:             { fr: 'ICE',               en: 'Tax ID (ICE)'       },
+  categorie:       { fr: 'Catégorie',         en: 'Category'           },
+  articles:        { fr: 'Articles',          en: 'Items'              },
+  banque:          { fr: 'Banque',            en: 'Bank'               },
+  titulaire:       { fr: 'Titulaire',         en: 'Account Holder'     },
+  rib:             { fr: 'RIB',               en: 'Bank Account (RIB)' },
+  periode:         { fr: 'Période',           en: 'Period'             },
+  solde_ouverture: { fr: 'Solde Ouverture',   en: 'Opening Balance'    },
+  solde_cloture:   { fr: 'Solde Clôture',     en: 'Closing Balance'    },
+  lignes:          { fr: 'Lignes',            en: 'Lines'              },
+  libelle:         { fr: 'Libellé',           en: 'Description'        },
+  debit:           { fr: 'Débit',             en: 'Debit'              },
+  credit:          { fr: 'Crédit',            en: 'Credit'             },
+  numero_bc:       { fr: 'N° Bon Commande',   en: 'PO Number'          },
+  total_ht:        { fr: 'Total HT',          en: 'Total Excl. Tax'    },
+  total_ttc:       { fr: 'Total TTC',         en: 'Total Incl. Tax'    },
+  designation:     { fr: 'Désignation',       en: 'Description'        },
+  quantite:        { fr: 'Quantité',          en: 'Quantity'           },
+  prix_unitaire:   { fr: 'Prix Unitaire',     en: 'Unit Price'         },
+  emetteur:        { fr: 'Émetteur',          en: 'Issuer'             },
+  montant:         { fr: 'Montant',           en: 'Amount'             },
+  mode_paiement:   { fr: 'Mode Paiement',     en: 'Payment Method'     },
+  reference:       { fr: 'Référence',         en: 'Reference'          },
+  date:            { fr: 'Date',              en: 'Date'               },
+}
+
+function colLabel(key, lang) {
+  const entry = FIELD_LABELS[key]
+  if (entry) return entry[lang] ?? entry.fr
+  return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
+
 export async function POST(request) {
   try {
     // ── Auth ─────────────────────────────────────────────────────────────────
@@ -19,6 +60,7 @@ export async function POST(request) {
     const formData = await request.formData()
     const rawIds = formData.getAll('documentIds')
     const format  = formData.get('format') || 'csv'
+    const lang    = formData.get('lang') === 'en' ? 'en' : 'fr'
 
     // Sanitize documentIds — UUID format only
     const documentIds = rawIds.filter(id => typeof id === 'string' && /^[0-9a-f-]{36}$/.test(id))
@@ -40,19 +82,27 @@ export async function POST(request) {
     if (documents.length === 0) return new NextResponse('Documents introuvables.', { status: 404 })
 
     // ── Build rows ────────────────────────────────────────────────────────────
+    const BASE_HEADERS = lang === 'en'
+      ? ['File Name', 'Import Date', 'Status']
+      : ['Nom du Fichier', "Date d'import", 'Statut']
+
     const mainHeaders = [
-      'Nom du Fichier', "Date d'import", 'Statut',
-      ...requestedColumns.map(c => c.replace(/_/g, ' ').toUpperCase()),
+      ...BASE_HEADERS,
+      ...requestedColumns.map(c => colLabel(c, lang)),
     ]
     const mainRows    = []
     const detailedLines = []
 
     for (const doc of documents) {
       const data = doc.donnees_extraites || {}
+      const STATUT_MAP = lang === 'en'
+        ? { A_EXTRAIRE: 'Pending', EN_COURS_IA: 'Processing', A_VERIFIER: 'To Review', VALIDE: 'Validated', REJETE: 'Rejected' }
+        : { A_EXTRAIRE: 'En attente', EN_COURS_IA: 'En cours', A_VERIFIER: 'À vérifier', VALIDE: 'Validé', REJETE: 'Rejeté' }
+
       const row  = [
         doc.nom_fichier || doc.id,
-        new Date(doc.createdAt).toLocaleDateString('fr-FR'),
-        doc.statut,
+        new Date(doc.createdAt).toLocaleDateString(lang === 'en' ? 'en-GB' : 'fr-FR'),
+        STATUT_MAP[doc.statut] ?? doc.statut,
       ]
 
       for (const col of requestedColumns) {
@@ -64,11 +114,11 @@ export async function POST(request) {
 
         if (Array.isArray(val) && val.length > 0 && typeof val[0] === 'object') {
           val.forEach(item => detailedLines.push({
-            'FICHIER SOURCE': doc.nom_fichier || doc.id,
-            'TYPE LIGNE':     col.toUpperCase(),
+            [lang === 'en' ? 'SOURCE FILE' : 'FICHIER SOURCE']: doc.nom_fichier || doc.id,
+            [lang === 'en' ? 'LINE TYPE'   : 'TYPE LIGNE']:     colLabel(col, lang).toUpperCase(),
             ...item,
           }))
-          row.push('[Voir onglet Détails]')
+          row.push(lang === 'en' ? '[See Details tab]' : '[Voir onglet Détails]')
         } else {
           if (val === null || val === undefined) val = ''
           if (typeof val === 'object') val = JSON.stringify(val)
@@ -84,7 +134,7 @@ export async function POST(request) {
 
       const mainWs = XLSX.utils.aoa_to_sheet([mainHeaders, ...mainRows])
       mainWs['!cols'] = mainHeaders.map(h => ({ wch: Math.max(20, h.length + 5) }))
-      XLSX.utils.book_append_sheet(wb, mainWs, 'Données Générales')
+      XLSX.utils.book_append_sheet(wb, mainWs, lang === 'en' ? 'General Data' : 'Données Générales')
 
       if (detailedLines.length > 0) {
         const detailKeys    = [...new Set(detailedLines.flatMap(l => Object.keys(l)))]
@@ -92,14 +142,15 @@ export async function POST(request) {
         const detailRows    = detailedLines.map(l => detailHeaders.map(k => l[k] ?? ''))
         const detailWs      = XLSX.utils.aoa_to_sheet([detailHeaders.map(h => h.replace(/_/g, ' ').toUpperCase()), ...detailRows])
         detailWs['!cols']   = detailHeaders.map(h => ({ wch: Math.max(15, h.length + 5) }))
-        XLSX.utils.book_append_sheet(wb, detailWs, 'Lignes Détaillées')
+        XLSX.utils.book_append_sheet(wb, detailWs, lang === 'en' ? 'Detailed Lines' : 'Lignes Détaillées')
       }
 
+      const filename = lang === 'en' ? 'Accounting_Export.xlsx' : 'Export_Comptable.xlsx'
       const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
       return new NextResponse(buf, {
         headers: {
           'Content-Type':        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          'Content-Disposition': 'attachment; filename="Export_Comptable.xlsx"',
+          'Content-Disposition': `attachment; filename="${filename}"`,
         },
       })
     }
@@ -109,10 +160,11 @@ export async function POST(request) {
     mainRows.forEach(row => {
       lines.push(row.map(val => `"${String(val).replace(/"/g, '""')}"`).join(';'))
     })
+    const csvFilename = lang === 'en' ? 'Accounting_Export.csv' : 'Export_Comptable.csv'
     return new NextResponse('﻿' + lines.join('\n'), {
       headers: {
         'Content-Type':        'text/csv; charset=utf-8',
-        'Content-Disposition': 'attachment; filename="Export_Comptable.csv"',
+        'Content-Disposition': `attachment; filename="${csvFilename}"`,
       },
     })
 

@@ -25,9 +25,10 @@ function defaultPromptForType(type) {
  * @param {string|null} templateId - Template ID or 'NO_MODEL'/'DEFAULT_FACTURE'
  * @param {{ type: string, confidence: number }} classification - Classification result
  * @param {string|null} userId - Supabase user ID (null = no personalization)
+ * @param {'fr'|'en'} lang - Output language for descriptive field values
  * @returns {Promise<{ prompt: string, personalized: boolean }>}
  */
-export async function buildExtractionPrompt(templateId, classification, userId = null) {
+export async function buildExtractionPrompt(templateId, classification, userId = null, lang = 'fr') {
   let basePrompt
 
   if (templateId === 'DEFAULT_FACTURE') {
@@ -43,14 +44,19 @@ export async function buildExtractionPrompt(templateId, classification, userId =
     basePrompt = defaultPromptForType(classification.type)
   }
 
+  // Language instruction appended last so it always takes effect
+  const langInstr = lang === 'en'
+    ? '\nLANGUAGE: Write all descriptive text values (category names, labels, payment methods, descriptions) in English. Keep proper nouns, company names, dates, amounts, and reference numbers exactly as they appear in the document.'
+    : ''
+
   // No personalization if no userId
-  if (!userId) return { prompt: basePrompt, personalized: false }
+  if (!userId) return { prompt: basePrompt + langInstr, personalized: false }
 
   const prefs = await prisma.userFieldPreference.findUnique({
     where: { user_id_document_type: { user_id: userId, document_type: classification.type } },
   })
 
-  if (!prefs) return { prompt: basePrompt, personalized: false }
+  if (!prefs) return { prompt: basePrompt + langInstr, personalized: false }
 
   const parts = [basePrompt]
   const preferred = Array.isArray(prefs.preferred_fields) ? prefs.preferred_fields : []
@@ -68,5 +74,5 @@ export async function buildExtractionPrompt(templateId, classification, userId =
     parts.push(`Utilise ces noms de clés personnalisés : ${aliasStr}.`)
   }
 
-  return { prompt: parts.join('\n'), personalized: true }
+  return { prompt: parts.join('\n') + langInstr, personalized: true }
 }

@@ -75,6 +75,8 @@ model Client {
   cabinet            Cabinet    @relation(fields: [cabinet_id], references: [id], onDelete: Cascade)
   documents          Document[]
   dossiers           Dossier[]
+
+  @@index([cabinet_id])
 }
 
 // --- 3. MODÈLES D'EXTRACTION (PRESETS) ---
@@ -98,6 +100,8 @@ model Dossier {
 
   client     Client   @relation(fields: [client_id], references: [id], onDelete: Cascade)
   documents  Document[]
+
+  @@index([client_id])
 }
 
 // --- 4. LE FILE MANAGER (DOCUMENTS) ---
@@ -128,6 +132,8 @@ model Document {
 
   @@index([client_id, statut])
   @@index([statut, updatedAt])
+  @@index([template_id])
+  @@index([dossier_id])
 }
 
 // --- 5. LEARNING LOOP ---
@@ -140,6 +146,8 @@ model FieldCorrection {
   corrected_value String   @db.Text
   supplier_name   String?
   createdAt       DateTime @default(now())
+
+  @@index([user_id, document_type])
 }
 
 model UserFieldPreference {
@@ -190,6 +198,8 @@ model AdminLog {
   details   Json?
   ip        String?
   createdAt DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
 }
 
 // --- 9. DEMO ATTEMPTS (persistent — rateLimiter is in-memory only) ---

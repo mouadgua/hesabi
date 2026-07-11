@@ -73,13 +73,9 @@ export async function POST(request) {
   }
 
   const cabinet = await prisma.cabinet.findUnique({
-    where: { id: utilisateur.cabinet_id }, select: { id: true, credits: true }
+    where: { id: utilisateur.cabinet_id }, select: { id: true }
   })
   if (!cabinet) return NextResponse.json({ error: 'Cabinet introuvable' }, { status: 403 })
-
-  if (cabinet.credits < 1) {
-    return NextResponse.json({ error: 'Crédits insuffisants. Rechargez votre compte.' }, { status: 400 })
-  }
 
   // ── Validate dossier_id belongs to this cabinet ───────────────────────────
   if (dossierId) {
@@ -108,6 +104,15 @@ export async function POST(request) {
     targetClient = await getOrCreateDefaultClient(utilisateur.cabinet_id)
   }
 
+  // ── Atomic credit deduction BEFORE upload — prevents race condition and orphan files
+  const creditResult = await prisma.cabinet.updateMany({
+    where: { id: cabinet.id, credits: { gte: 1 } },
+    data:  { credits: { decrement: 1 } },
+  })
+  if (creditResult.count === 0) {
+    return NextResponse.json({ error: 'Crédits insuffisants. Rechargez votre compte.' }, { status: 400 })
+  }
+
   // ── Upload with UUID filename (no original name in path) ──────────────────
   const uniqueName = `${crypto.randomUUID()}.${ext}`
   const filePath   = `${utilisateur.cabinet_id}/${uniqueName}`
@@ -117,6 +122,11 @@ export async function POST(request) {
     .upload(filePath, bytes, { contentType: file.type || 'application/octet-stream' })
 
   if (uploadError) {
+    // Refund the credit since the upload failed
+    await prisma.cabinet.update({
+      where: { id: cabinet.id },
+      data:  { credits: { increment: 1 } },
+    }).catch(e => console.error('[upload] Failed to refund credit after upload error:', e))
     return NextResponse.json({ error: "Erreur d'upload." }, { status: 500 })
   }
 
@@ -128,11 +138,6 @@ export async function POST(request) {
       chemin_storage: filePath,
       statut:         'A_EXTRAIRE',
     },
-  })
-
-  await prisma.cabinet.update({
-    where: { id: cabinet.id },
-    data:  { credits: { decrement: 1 } },
   })
 
   return NextResponse.json({

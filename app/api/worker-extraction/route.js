@@ -74,16 +74,14 @@ async function findMatchingTemplate(type, cabinetId) {
     recu:             ['reçu', 'recu'],
   }[type] ?? []
 
-  for (const kw of keywords) {
-    const tmpl = await prisma.templateExtraction.findFirst({
-      where: {
-        cabinet_id: cabinetId,
-        nom_modele: { contains: kw, mode: 'insensitive' },
-      },
-    })
-    if (tmpl) return tmpl
-  }
-  return null
+  if (!keywords.length) return null
+
+  return prisma.templateExtraction.findFirst({
+    where: {
+      cabinet_id: cabinetId,
+      OR: keywords.map(kw => ({ nom_modele: { contains: kw, mode: 'insensitive' } })),
+    },
+  })
 }
 
 // ── Worker handler ─────────────────────────────────────────────────────────────
@@ -106,7 +104,7 @@ export async function POST(request) {
   }
 
   try {
-    const { documentIds, templateId, userId, cabinetId } = await request.json()
+    const { documentIds, templateId, userId, cabinetId, lang = 'fr' } = await request.json()
     if (!documentIds?.length) {
       return NextResponse.json({ success: false, message: 'Aucun document fourni.' })
     }
@@ -187,6 +185,7 @@ export async function POST(request) {
           effectiveTemplateId,
           classification,
           userId ?? null,
+          lang,
         )
 
         const fullPrompt =

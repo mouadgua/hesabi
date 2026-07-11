@@ -88,6 +88,7 @@ export default function ExtractionHub({
   const [credits, setCredits] = useState(initialCredits)
   const [selectedDocIds, setSelectedDocIds] = useState(new Set())
   const [templateId, setTemplateId] = useState('NO_MODEL')
+  const [lang, setLang]             = useState('fr')
   const [uploadProgress, setUploadProgress] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -364,6 +365,7 @@ export default function ExtractionHub({
     const ids = [...selectedDocIds]
     const fd  = new FormData()
     fd.append('template_id', templateId)
+    fd.append('lang', lang)
     ids.forEach(id => fd.append('documentIds', id))
 
     setDocs(prev => prev.map(d => ids.includes(d.id) ? { ...d, statut: 'EN_COURS_IA' } : d))
@@ -672,6 +674,24 @@ export default function ExtractionHub({
             </label>
 
             <div className="flex items-center gap-2 ml-auto flex-wrap">
+              {/* FR / EN language toggle */}
+              <div className="flex h-8 rounded-lg border border-slate-200 dark:border-white/10 overflow-hidden shrink-0">
+                {['fr', 'en'].map(l => (
+                  <button
+                    key={l}
+                    type="button"
+                    onClick={() => setLang(l)}
+                    className={`px-3 text-[11px] font-semibold uppercase tracking-wide transition-colors cursor-pointer
+                      ${lang === l
+                        ? 'bg-[#1D9E75] text-white'
+                        : 'bg-white dark:bg-white/[0.04] text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.08]'
+                      }`}
+                  >
+                    {l}
+                  </button>
+                ))}
+              </div>
+
               <Select value={templateId} onValueChange={setTemplateId}>
                 <SelectTrigger className="h-8 w-52 text-xs bg-white dark:bg-white/[0.05] border-slate-200 dark:border-white/10">
                   <SelectValue />

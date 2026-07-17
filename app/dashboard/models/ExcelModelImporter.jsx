@@ -21,22 +21,17 @@ export default function ExcelModelImporter() {
   async function handleFile(e) {
     const file = e.target.files[0]
     if (!file) return
-    const XLSX = await import("xlsx")
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const wb = XLSX.read(ev.target.result, { type: "binary" })
-        const ws = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json(ws, { header: 1 })
-        const headers = (rows[0] || []).map(String).filter(Boolean)
-        if (headers.length === 0) { toast.error("Aucun en-tête trouvé dans ce fichier."); return }
-        setColumns(headers)
-        setStep("edit")
-      } catch {
-        toast.error("Impossible de lire ce fichier Excel.")
-      }
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/parse-excel-headers', { method: 'POST', body: fd })
+      const data = await res.json()
+      if (!res.ok || data.error) { toast.error(data.error ?? "Impossible de lire ce fichier Excel."); return }
+      setColumns(data.headers)
+      setStep("edit")
+    } catch {
+      toast.error("Impossible de lire ce fichier Excel.")
     }
-    reader.readAsBinaryString(file)
   }
 
   function removeColumn(idx) {

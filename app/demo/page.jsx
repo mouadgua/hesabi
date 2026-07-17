@@ -98,22 +98,17 @@ function flattenForSheet(obj, prefix = '') {
   return rows
 }
 
-async function exportToExcel(data, docType, fileName) {
-  const { utils, writeFile } = await import('xlsx')
-  const wb = utils.book_new()
-  const { scalars, arrays } = splitData(data)
-  const scalarRows = Object.entries(scalars).map(([k, v]) => ({ Champ: k, Valeur: String(v) }))
-  const ws1 = utils.json_to_sheet(scalarRows)
-  ws1['!cols'] = [{ wch: 28 }, { wch: 50 }]
-  utils.book_append_sheet(wb, ws1, DOC_TYPE_LABELS[docType] ?? 'Informations')
-  for (const [fieldName, rows] of Object.entries(arrays)) {
-    const cols = [...new Set(rows.flatMap(r => Object.keys(r)))]
-    const sheetRows = rows.map(r => Object.fromEntries(cols.map(c => [c, r[c] ?? ''])))
-    const ws = utils.json_to_sheet(sheetRows, { header: cols })
-    ws['!cols'] = cols.map(() => ({ wch: 22 }))
-    utils.book_append_sheet(wb, ws, (fieldName.charAt(0).toUpperCase() + fieldName.slice(1)).slice(0, 31))
-  }
-  writeFile(wb, `${fileName ?? 'extraction'}.xlsx`)
+function exportToExcel(data, docType, fileName) {
+  const { scalars } = splitData(data)
+  const rows = Object.entries(scalars).map(([k, v]) => `"${k}","${String(v).replace(/"/g, '""')}"`)
+  const csv = ['Champ,Valeur', ...rows].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${fileName ?? 'extraction'}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────

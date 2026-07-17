@@ -148,10 +148,11 @@ function ReactivateModal({ cabinet, open, onClose, onRefresh }) {
 
 function PlanModal({ cabinet, open, onClose, onRefresh }) {
   const [isPending, start] = useTransition()
-  const [plan, setPlan]         = useState(cabinet?.plan          ?? 'PRO')
-  const [status, setStatus]     = useState(cabinet?.plan_status   ?? 'TRIAL')
-  const [limit, setLimit]       = useState(String(cabinet?.credits_limit ?? 15))
-  const [credits, setCredits]   = useState(String(cabinet?.credits       ?? 15))
+  const [plan, setPlan]               = useState(cabinet?.plan             ?? 'PRO')
+  const [status, setStatus]           = useState(cabinet?.plan_status      ?? 'TRIAL')
+  const [limit, setLimit]             = useState(String(cabinet?.credits_limit ?? 15))
+  const [credits, setCredits]         = useState(String(cabinet?.credits       ?? 15))
+  const [exMethod, setExMethod]       = useState(cabinet?.extraction_method ?? 'gemini')
 
   // Sync when cabinet changes (useEffect to avoid infinite-loop risk in useMemo)
   useEffect(() => {
@@ -160,6 +161,7 @@ function PlanModal({ cabinet, open, onClose, onRefresh }) {
     setStatus(cabinet.plan_status)
     setLimit(String(cabinet.credits_limit))
     setCredits(String(cabinet.credits))
+    setExMethod(cabinet.extraction_method ?? 'gemini')
   }, [cabinet?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function submit(e) {
@@ -170,6 +172,7 @@ function PlanModal({ cabinet, open, onClose, onRefresh }) {
     fd.append('plan_status', status)
     fd.append('credits_limit', limit)
     fd.append('credits', credits)
+    fd.append('extraction_method', exMethod)
     start(async () => {
       try {
         await updateCabinetPlanAction(fd)
@@ -229,6 +232,23 @@ function PlanModal({ cabinet, open, onClose, onRefresh }) {
               <Label>Crédits actuels</Label>
               <Input type="number" min={0} value={credits} onChange={e => setCredits(e.target.value)} />
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Méthode d&apos;extraction</Label>
+            <Select value={exMethod} onValueChange={setExMethod}>
+              <SelectTrigger className="h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gemini">Gemini (défaut)</SelectItem>
+                <SelectItem value="hybrid_azure">Hybride Azure OCR + Gemini</SelectItem>
+              </SelectContent>
+            </Select>
+            {exMethod === 'hybrid_azure' && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                Azure OCR requis — assure-toi que AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT et KEY sont configurés.
+              </p>
+            )}
           </div>
           <DialogFooter className="gap-2">
             <Button type="button" variant="outline" onClick={onClose}>Annuler</Button>

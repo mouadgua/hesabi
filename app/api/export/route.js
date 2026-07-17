@@ -1,7 +1,7 @@
 import prisma from '@/lib/prisma'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 
 // ── Field name translations ────────────────────────────────────────────────────
 const FIELD_LABELS = {
@@ -130,23 +130,26 @@ export async function POST(request) {
 
     // ── Excel ─────────────────────────────────────────────────────────────────
     if (format === 'excel') {
-      const wb = XLSX.utils.book_new()
+      const wb = new ExcelJS.Workbook()
 
-      const mainWs = XLSX.utils.aoa_to_sheet([mainHeaders, ...mainRows])
-      mainWs['!cols'] = mainHeaders.map(h => ({ wch: Math.max(20, h.length + 5) }))
-      XLSX.utils.book_append_sheet(wb, mainWs, lang === 'en' ? 'General Data' : 'Données Générales')
+      const mainWs = wb.addWorksheet(lang === 'en' ? 'General Data' : 'Données Générales')
+      mainWs.columns = mainHeaders.map(h => ({ header: h, width: Math.max(20, h.length + 5) }))
+      for (const row of mainRows) mainWs.addRow(row)
+      mainWs.getRow(1).font = { bold: true }
 
       if (detailedLines.length > 0) {
-        const detailKeys    = [...new Set(detailedLines.flatMap(l => Object.keys(l)))]
-        const detailHeaders = detailKeys
-        const detailRows    = detailedLines.map(l => detailHeaders.map(k => l[k] ?? ''))
-        const detailWs      = XLSX.utils.aoa_to_sheet([detailHeaders.map(h => h.replace(/_/g, ' ').toUpperCase()), ...detailRows])
-        detailWs['!cols']   = detailHeaders.map(h => ({ wch: Math.max(15, h.length + 5) }))
-        XLSX.utils.book_append_sheet(wb, detailWs, lang === 'en' ? 'Detailed Lines' : 'Lignes Détaillées')
+        const detailKeys = [...new Set(detailedLines.flatMap(l => Object.keys(l)))]
+        const detailWs   = wb.addWorksheet(lang === 'en' ? 'Detailed Lines' : 'Lignes Détaillées')
+        detailWs.columns = detailKeys.map(k => ({
+          header: k.replace(/_/g, ' ').toUpperCase(),
+          width: Math.max(15, k.length + 5),
+        }))
+        for (const line of detailedLines) detailWs.addRow(detailKeys.map(k => line[k] ?? ''))
+        detailWs.getRow(1).font = { bold: true }
       }
 
       const filename = lang === 'en' ? 'Accounting_Export.xlsx' : 'Export_Comptable.xlsx'
-      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+      const buf = await wb.xlsx.writeBuffer()
       return new NextResponse(buf, {
         headers: {
           'Content-Type':        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

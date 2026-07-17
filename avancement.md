@@ -1,5 +1,5 @@
 # Avancement — Hesabi SaaS
-> Dernière mise à jour : 2026-07-03 · Stack : Next.js 16.2.4 / Prisma 6.19.3 / Supabase / Neon / Vercel
+> Dernière mise à jour : 2026-07-17 · Stack : Next.js 16.2.4 / Prisma 6.19.3 / Supabase / Neon / Vercel
 
 ---
 
@@ -19,6 +19,7 @@
 | Gestion des modèles d'extraction | ✅ Complet |
 | Sécurité & hardening | ✅ Complet (post-audit) |
 | Système de crédits | ✅ Corrigé (race condition fixée) |
+| Pipeline hybride Azure OCR (Phase 1+2/4) | ✅ Complet — activable par cabinet |
 | Abonnement / Stripe | 🔴 Non démarré |
 | Rate limiter distribué (Redis) | 🟡 À faire |
 | Pagination documents | 🟡 À faire |
@@ -62,6 +63,28 @@
 - Validation → statut VALIDE + redirect
 - Re-extraction unitaire depuis la page de vérification
 - Feedback "champ manquant" (stocké en DB pour analyse)
+
+### Pipeline hybride Azure OCR (Phase 1+2/4)
+
+**Phase 1/4 — Fondations Azure OCR : terminé**
+- `lib/azureOcr.js` : `analyzeLayout()` (POST + polling) + `simplifyForLLM()` (nettoyage texte)
+- `app/api/test-azure-ocr/route.js` : route de test protégée par `WORKER_SECRET`
+
+**Phase 2/4 — Pipeline hybride configurable par cabinet : terminé**
+- `lib/extraction.js` : orchestrateur `extractDocument()` — route vers Gemini ou Azure OCR + Gemini texte
+- `Cabinet.extraction_method` : `'gemini'` (défaut) | `'hybrid_azure'` — zéro impact sur les cabinets existants
+- `Document.extraction_method_used` + `Document.extraction_cost_est` : traçabilité par extraction
+- Bascule admin : `/admin/users` → "Modifier le plan" → select "Méthode d'extraction"
+- Migration SQL requise : `prisma/add_hybrid_extraction.sql`
+
+**Comment activer le mode hybride sur un cabinet de test :**
+1. Exécuter `prisma/add_hybrid_extraction.sql` dans Supabase SQL Editor
+2. Ajouter `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` et `AZURE_DOCUMENT_INTELLIGENCE_KEY` dans Vercel
+3. Dans `/admin/users` → cabinet cible → "Modifier le plan" → "Hybride Azure OCR + Gemini"
+4. Lancer une extraction — le worker passe par Azure OCR d'abord puis Gemini en mode texte
+
+**Phase 3/4 (à faire)** : file d'attente asynchrone pour les documents longs
+**Phase 4/4 (à faire)** : fallback Azure → Gemini vision si Azure échoue
 
 ### Learning loop
 - Corrections utilisateur enregistrées (`FieldCorrection`)
@@ -305,6 +328,8 @@ Lancé avec `npm test` (Jest + ESM).
 | `IP_HASH_SALT` | Hachage des IPs démo |
 | `UPSTASH_REDIS_REST_URL` | 🟡 À configurer (rate limiter Redis) |
 | `UPSTASH_REDIS_REST_TOKEN` | 🟡 À configurer (rate limiter Redis) |
+| `AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` | 🟡 Requis si extraction_method = hybrid_azure |
+| `AZURE_DOCUMENT_INTELLIGENCE_KEY` | 🟡 Requis si extraction_method = hybrid_azure |
 
 ---
 

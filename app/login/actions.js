@@ -29,9 +29,16 @@ export async function login(formData) {
 
   if (error) {
     console.error('[login] Supabase error:', error.message, error.status)
-    const msg = error.message?.includes('Email not confirmed')
-      ? "Veuillez confirmer votre email avant de vous connecter."
-      : `Identifiants incorrects (${error.message})`
+    let msg
+    if (error.status >= 500 || error.status === 521 || !error.message) {
+      msg = "Le service est temporairement indisponible. Réessayez dans quelques instants."
+    } else if (error.message.includes('Email not confirmed')) {
+      msg = "Veuillez confirmer votre email avant de vous connecter."
+    } else if (error.message.includes('Invalid login') || error.message.includes('invalid_credentials')) {
+      msg = "Email ou mot de passe incorrect."
+    } else {
+      msg = `Connexion impossible : ${error.message}`
+    }
     return redirect('/login?message=' + encodeURIComponent(msg))
   }
 

@@ -57,6 +57,7 @@ model Cabinet {
   templates           TemplateExtraction[]
   comptes_comptables  CompteComptable[]
   account_preferences CabinetAccountPreference[]
+  export_templates    ExportTemplate[]
 }
 
 
@@ -290,6 +291,20 @@ model CabinetAccountPreference {
   compte         CompteComptable @relation(fields: [compte_id], references: [id])
 
   @@unique([cabinet_id, document_type, fournisseur_key])
+  @@index([cabinet_id])
+}
+
+// --- 13. EXPORT TEMPLATES (saved column configs) ---
+model ExportTemplate {
+  id         String   @id @default(cuid())
+  cabinet_id String   @db.Uuid
+  name       String
+  config     Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  cabinet    Cabinet  @relation(fields: [cabinet_id], references: [id], onDelete: Cascade)
+
   @@index([cabinet_id])
 }
 

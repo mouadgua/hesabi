@@ -12,7 +12,7 @@
 | Pipeline extraction IA | ✅ Complet |
 | Vérification & correction des données | ✅ Complet |
 | Learning loop | ✅ Complet |
-| Export (Excel / CSV) | ✅ Complet (lang wirable) |
+| Export (Excel / CSV) | ✅ Complet (exceljs, 4 presets, groupement, colonnes calculées) |
 | Export masse (ZIP) | ✅ Complet |
 | Page démo publique | ✅ Complet |
 | Dashboard admin | ✅ Complet |
@@ -102,12 +102,18 @@
 - SQL migration : `prisma/add_plan_comptable.sql`
 
 ### Export
+- Migration `xlsx` → **exceljs** (headers colorés, freeze pane, colonnes dimensionnées automatiquement)
 - Export Excel (`.xlsx`) et CSV depuis la sélection de documents
-- Sélection des colonnes à exporter via modale
+- **4 presets** : Liste / Par mois / Par compte / Avancé
+- **Groupement** : groupement par mois, fournisseur ou catégorie avec lignes de sous-totaux
+- **Colonnes calculées** (whitelist `champ1+champ2` / `champ1-champ2`) — évaluées server-side, pas d'eval()
+- **Mode Avancé** : drag-and-drop reordering (@dnd-kit/sortable), renommage des headers inline
+- **Save/load configs** : `ExportTemplate` Prisma model + `/api/export-templates` (GET/POST/DELETE)
+- Toggle FR/EN dans la modale (labels traduits dans les headers Excel)
 - Détection intelligente des lignes détaillées → onglet séparé Excel
-- Traduction des labels FR/EN dans les headers Excel
-- Export masse ZIP (recapitulatif Excel + fichiers originaux)
+- Export masse ZIP (recapitulatif exceljs + fichiers originaux)
 - Route `/api/export` et `/api/export-mass` — filtrées par `cabinet_id` (IDOR-safe)
+- SQL migration : `prisma/add_export_template.sql` (à exécuter dans Supabase SQL Editor)
 
 ### Page démo
 - `/demo` : extraction gratuite sans compte (PDF, images)
@@ -187,10 +193,7 @@ FieldCorrection.[user_id, document_type] · Dossier.client_id · AdminLog.create
 4. Remplacer le cache MD5 dans `lib/ai.js` par `redis.get/set` avec TTL 1h
 5. Ajouter `UPSTASH_REDIS_REST_URL` et `UPSTASH_REDIS_REST_TOKEN` dans Vercel env
 
-#### Sélecteur de langue dans l'export modal
-**Problème** : L'API `/api/export` supporte le paramètre `lang` (FR/EN), mais le composant `components/export-modal.jsx` n'a pas de toggle — l'export est toujours en français.
-
-**À faire** : ajouter un toggle FR/EN dans `ExportModal` (même pattern que dans `ExtractionHub.jsx`) et une `<input type="hidden" name="lang" value={lang} />` dans le `<form>`.
+#### ~~Sélecteur de langue dans l'export modal~~ ✅ Fait — toggle FR/EN intégré dans la modale
 
 ### 🟡 Moyen terme
 
@@ -199,14 +202,7 @@ FieldCorrection.[user_id, document_type] · Dossier.client_id · AdminLog.create
 
 **À faire** : cursor-based pagination Prisma (`take: 25` + `cursor`) + bouton "Charger plus" dans l'UI.
 
-#### Migration `xlsx` → `exceljs`
-**Problème** : `xlsx ^0.18.5` est ancienne (2022), CVEs connues, licence commerciale.
-
-**À faire** :
-```bash
-npm remove xlsx && npm install exceljs
-```
-Réécrire `app/api/export/route.js` et `app/api/export-mass/route.js` avec l'API exceljs.
+#### ~~Migration `xlsx` → `exceljs`~~ ✅ Fait (feature/export-flexible-exceljs)
 
 #### Unification des appels Gemini
 **Problème** : `GoogleGenerativeAI` est instancié séparément dans `app/dashboard/actions.js` (fonction `extractInvoiceData`) et `app/api/demo-extraction/route.js`. Le reste du projet passe par `lib/ai.js` (REST direct).
@@ -269,8 +265,9 @@ app/
     ├── health/              Ping DB (monitoring)
     ├── upload/              Upload fichier → Supabase + DB
     ├── worker-extraction/   Pipeline IA (classif + extraction)
-    ├── export/              Export Excel/CSV
-    ├── export-mass/         Export ZIP (Excel + originaux)
+    ├── export/              Export Excel/CSV (exceljs, groupement, colonnes calculées)
+    ├── export-mass/         Export ZIP (exceljs recap + originaux)
+    ├── export-templates/    ✅ CRUD configs export sauvegardées (ExportTemplate)
     ├── clients/             CRUD clients
     ├── folders/             CRUD dossiers
     ├── corrections/save/    Save field correction
@@ -303,8 +300,9 @@ components/
 └── ui/                      Composants Shadcn/UI
 
 prisma/
-├── schema.prisma            13 modèles — indexes ajoutés (migration SQL à appliquer)
-└── add_missing_indexes.sql  ✅ SQL prêt pour Supabase dashboard
+├── schema.prisma            14 modèles — ExportTemplate ajouté
+├── add_missing_indexes.sql  ✅ SQL prêt pour Supabase dashboard
+└── add_export_template.sql  ✅ SQL à exécuter pour créer ExportTemplate
 ```
 
 ---
@@ -350,7 +348,8 @@ Lancé avec `npm test` (Jest + ESM).
 |---|---|---|---|
 | 1 | Exécuter `prisma/add_missing_indexes.sql` sur Supabase | 5 min | — |
 | 2 | Configurer Upstash Redis + migrer rate limiter | 2h | Compte Upstash |
-| 3 | Ajouter toggle FR/EN dans `export-modal.jsx` | 30 min | — |
+| 3 | ~~Toggle FR/EN export-modal~~ | ✅ Fait | — |
 | 4 | Pagination documents (`take: 25` + cursor) | 4h | — |
-| 5 | Migration `xlsx` → `exceljs` | 3h | — |
-| 6 | Intégration Stripe (post-bêta) | 2 jours | Compte Stripe |
+| 5 | ~~Migration `xlsx` → `exceljs`~~ | ✅ Fait | — |
+| 6 | Exécuter `prisma/add_export_template.sql` sur Supabase | 5 min | — |
+| 7 | Intégration Stripe (post-bêta) | 2 jours | Compte Stripe |

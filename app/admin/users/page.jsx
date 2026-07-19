@@ -30,24 +30,32 @@ export default async function AdminUsersPage() {
     extractionByCabinet[row.cabinet_id] = Number(row.cnt)
   }
 
+  // Graceful fallback: extraction_method may not exist until SQL migration is applied
+  const extractionMethods = {}
+  try {
+    const rows = await prisma.$queryRaw`SELECT id, "extraction_method" FROM "Cabinet"`
+    for (const row of rows) extractionMethods[row.id] = row.extraction_method ?? 'gemini'
+  } catch { /* column not yet in DB */ }
+
   const data = cabinets.map(cab => {
     const mainUser = cab.utilisateurs[0] ?? null
     return {
-      id:             cab.id,
-      nom:            cab.nom,
-      email:          mainUser?.email          ?? '—',
-      nom_user:       mainUser?.nom            ?? '—',
-      plan:           cab.plan_abonnement,
-      plan_status:    cab.plan_status,
-      credits:        cab.credits,
-      credits_limit:  cab.credits_limit,
-      suspended:      cab.suspended,
-      suspend_reason: cab.suspend_reason       ?? null,
-      createdAt:      cab.createdAt.toISOString(),
-      last_active:    mainUser?.last_active_at?.toISOString() ?? null,
+      id:               cab.id,
+      nom:              cab.nom,
+      email:            mainUser?.email          ?? '—',
+      nom_user:         mainUser?.nom            ?? '—',
+      plan:             cab.plan_abonnement,
+      plan_status:      cab.plan_status,
+      credits:          cab.credits,
+      credits_limit:    cab.credits_limit,
+      suspended:        cab.suspended,
+      suspend_reason:   cab.suspend_reason       ?? null,
+      extraction_method: extractionMethods[cab.id] ?? 'gemini',
+      createdAt:        cab.createdAt.toISOString(),
+      last_active:      mainUser?.last_active_at?.toISOString() ?? null,
       total_extractions: extractionByCabinet[cab.id] ?? 0,
-      user_count:     cab.utilisateurs.length,
-      utilisateurs:   cab.utilisateurs.map(u => ({
+      user_count:       cab.utilisateurs.length,
+      utilisateurs:     cab.utilisateurs.map(u => ({
         id: u.id, email: u.email, nom: u.nom, role: u.role,
         createdAt: u.createdAt.toISOString(),
         last_active_at: u.last_active_at?.toISOString() ?? null,

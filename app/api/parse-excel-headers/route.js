@@ -37,7 +37,7 @@ export async function POST(request) {
       return NextResponse.json({ headers })
     }
 
-    // XLSX / XLS via exceljs
+    // XLSX via exceljs
     const wb = new ExcelJS.Workbook()
     if (ext === 'xlsx') {
       await wb.xlsx.load(buffer)

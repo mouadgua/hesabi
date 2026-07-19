@@ -47,29 +47,32 @@ export async function reactivateCabinetAction(formData) {
 
 export async function updateCabinetPlanAction(formData) {
   await requireAdmin()
-  const cabinetId   = formData.get('cabinet_id')
-  const plan        = formData.get('plan')          || 'PRO'
-  const planStatus  = formData.get('plan_status')   || 'TRIAL'
-  const creditsLimit = parseInt(formData.get('credits_limit') || '15', 10)
-  const credits     = parseInt(formData.get('credits')       || '15', 10)
-  const ip          = await getIp()
+  const cabinetId        = formData.get('cabinet_id')
+  const plan             = formData.get('plan')             || 'PRO'
+  const planStatus       = formData.get('plan_status')      || 'TRIAL'
+  const creditsLimit     = parseInt(formData.get('credits_limit') || '15', 10)
+  const credits          = parseInt(formData.get('credits')       || '15', 10)
+  const rawMethod        = formData.get('extraction_method') ?? 'gemini'
+  const extractionMethod = ['gemini', 'hybrid_azure'].includes(rawMethod) ? rawMethod : 'gemini'
+  const ip               = await getIp()
 
   if (!cabinetId) throw new Error('cabinet_id manquant')
 
   await prisma.cabinet.update({
     where: { id: cabinetId },
     data: {
-      plan_abonnement: plan,
-      plan_status:     planStatus,
-      credits_limit:   creditsLimit,
-      credits:         credits,
+      plan_abonnement:  plan,
+      plan_status:      planStatus,
+      credits_limit:    creditsLimit,
+      credits:          credits,
+      extraction_method: extractionMethod,
     },
   })
 
   await logAdminAction('UPDATE_PLAN', {
     entity:   'cabinet',
     entityId: cabinetId,
-    details:  { plan, planStatus, creditsLimit, credits },
+    details:  { plan, planStatus, creditsLimit, credits, extractionMethod },
     ip,
   })
   revalidatePath('/admin/users')

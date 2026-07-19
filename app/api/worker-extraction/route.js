@@ -2,6 +2,7 @@ import prisma from '@/lib/prisma'
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { aiExtract } from '@/lib/ai'
+import { extractDocument } from '@/lib/extraction'
 import { buildExtractionPrompt } from '@/utils/buildExtractionPrompt'
 
 // Extracts the first valid JSON object or array from any AI response string.
@@ -114,6 +115,17 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'cabinetId requis.' }, { status: 400 })
     }
 
+    // Fetch extraction method once — graceful fallback if migration not yet applied
+    let extractionMethod = 'gemini'
+    try {
+      const rows = await prisma.$queryRaw`
+        SELECT "extraction_method" FROM "Cabinet" WHERE id = ${cabinetId}::uuid LIMIT 1
+      `
+      extractionMethod = rows[0]?.extraction_method ?? 'gemini'
+    } catch {
+      // Column doesn't exist yet — default to gemini (no regression)
+    }
+
     for (const docId of documentIds) {
       try {
         // ── Fetch document — always scope to cabinetId (IDOR prevention) ────────
@@ -205,12 +217,14 @@ export async function POST(request) {
         }
         const maxTokens = TOKEN_BUDGET[classification.type] ?? 3000
 
-        let rawResponse, aiProvider
+        let rawResponse, aiProvider, methodUsed, costEst
         const extractStart = Date.now()
         try {
-          const result = await aiExtract(fullPrompt, mimeType, base64, { maxTokens })
+          const result = await extractDocument(base64, mimeType, fullPrompt, { extractionMethod, maxTokens })
           rawResponse = result.content
           aiProvider  = result.provider
+          methodUsed  = result.method_used
+          costEst     = result.cost_est
         } catch (aiErr) {
           if (aiErr.message === 'ALL_PROVIDERS_FAILED') {
             throw new Error('SERVICE_UNAVAILABLE')
@@ -227,9 +241,11 @@ export async function POST(request) {
         if (extractedData === null && aiProvider === 'cache') {
           console.warn(`[Worker] Cache hit but JSON parse failed for ${docId} — retrying fresh`)
           try {
-            const fresh = await aiExtract(fullPrompt, mimeType, base64, { maxTokens, useCache: false })
-            rawResponse = fresh.content
-            aiProvider  = fresh.provider
+            const fresh = await extractDocument(base64, mimeType, fullPrompt, { extractionMethod, maxTokens, useCache: false })
+            rawResponse   = fresh.content
+            aiProvider    = fresh.provider
+            methodUsed    = fresh.method_used
+            costEst       = fresh.cost_est
             extractedData = extractJSON(rawResponse)
           } catch (freshErr) {
             if (freshErr.message === 'ALL_PROVIDERS_FAILED') throw new Error('SERVICE_UNAVAILABLE')
@@ -255,13 +271,24 @@ export async function POST(request) {
         await prisma.document.update({
           where: { id: docId },
           data: {
-            statut:           'A_VERIFIER',
+            statut:            'A_VERIFIER',
             donnees_extraites: extractedData,
             error_message:     null,
             ai_provider:       aiProvider   ?? null,
             processing_ms:     processingMs ?? null,
           },
         })
+
+        // Store extraction tracking — requires prisma/add_hybrid_extraction.sql
+        if (methodUsed || costEst) {
+          prisma.document.update({
+            where: { id: docId },
+            data: {
+              extraction_method_used: methodUsed ?? null,
+              extraction_cost_est:    costEst    ?? null,
+            },
+          }).catch(() => { /* Migration not yet applied — skip silently */ })
+        }
 
       } catch (err) {
         console.error(`[Worker] Échec document ${docId}:`, err.message)

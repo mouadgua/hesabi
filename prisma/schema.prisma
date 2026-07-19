@@ -40,6 +40,8 @@ model Cabinet {
   suspended           Boolean  @default(false)
   suspend_reason      String?
 
+  extraction_method   String   @default("gemini")  // "gemini" | "hybrid_azure"
+
   ice                 String?
   identifiant_fiscal  String?
   registre_commerce   String?
@@ -124,6 +126,8 @@ model Document {
   processing_ms               Int?           // wall-clock extraction time
   tokens_in                   Int?
   tokens_out                  Int?
+  extraction_method_used      String?        // "gemini-pdf" | "hybrid_azure" | provider name
+  extraction_cost_est         Float?         // estimated USD cost of this extraction
   createdAt                   DateTime       @default(now())
   updatedAt                   DateTime       @updatedAt
 

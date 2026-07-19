@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { aiExtract } from '@/lib/ai'
 import { sanitizeEmail, validateDemoFile, validateFileBytes } from '@/lib/sanitize'
 import { checkDemoRateLimit, recordDemoRequest } from '@/lib/rateLimiter'
 import prisma from '@/lib/prisma'
@@ -8,8 +8,6 @@ import crypto from 'crypto'
 function hashIp(ip) {
   return crypto.createHash('sha256').update(ip + (process.env.IP_HASH_SALT || 'hesabi')).digest('hex').slice(0, 16)
 }
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
 
 // Allow up to 90 s for Next.js to keep the serverless function alive
 export const maxDuration = 90
@@ -134,17 +132,14 @@ export async function POST(request) {
       return NextResponse.json({ error: message, rateLimited: true }, { status: 429 })
     }
 
-    // ── Gemini extraction ───────────────────────────────────────────────────────
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
-    const documentConfig = { inlineData: { data: fileData, mimeType } }
+    // ── AI extraction ───────────────────────────────────────────────────────────
 
     // Step 1: classify
     let docType = 'autre'
     let confidence = 0.5
     try {
-      const classResult = await model.generateContent([CLASSIFY_PROMPT, documentConfig])
-      const raw = classResult.response.text().replace(/```json/g, '').replace(/```/g, '').trim()
-      const parsed = JSON.parse(raw)
+      const { content: classRaw } = await aiExtract(CLASSIFY_PROMPT, mimeType, fileData, { maxTokens: 150, useCache: true })
+      const parsed = JSON.parse(classRaw.replace(/```json/g, '').replace(/```/g, '').trim())
       if (VALID_TYPES.includes(parsed.type)) {
         docType = parsed.type
         confidence = Number(parsed.confidence) || 0.5
@@ -157,12 +152,10 @@ export async function POST(request) {
     const extractPrompt = buildPrompt(docType, cleanFields)
     let extractedData
     try {
-      const extractResult = await model.generateContent([extractPrompt, documentConfig])
-      const raw = extractResult.response.text().replace(/```json/g, '').replace(/```/g, '').trim()
-      extractedData = JSON.parse(raw)
+      const { content: extractRaw } = await aiExtract(extractPrompt, mimeType, fileData, { maxTokens: 3000, useCache: false })
+      extractedData = JSON.parse(extractRaw.replace(/```json/g, '').replace(/```/g, '').trim())
     } catch (err) {
-      const m = (err.message ?? '').toLowerCase()
-      if (m.includes('429') || m.includes('quota') || m.includes('exhausted') || m.includes('rate')) {
+      if (err.message === 'ALL_PROVIDERS_FAILED') {
         return NextResponse.json(
           { error: "Le service est temporairement surchargé. Réessayez dans quelques minutes." },
           { status: 503 }

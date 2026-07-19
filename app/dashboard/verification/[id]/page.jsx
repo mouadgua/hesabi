@@ -161,9 +161,16 @@ export default async function VerificationPage({ params }) {
           <div className="flex h-[55vh] w-full flex-col overflow-y-auto p-4 md:h-full md:w-1/2 md:p-6">
             <Card className="flex h-full flex-col rounded-2xl border border-slate-200/60 dark:border-white/[0.07] bg-white/70 dark:bg-white/[0.04] backdrop-blur-xl shadow-sm">
               <CardHeader className="flex shrink-0 flex-col gap-3 border-b border-slate-100/80 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02] pb-4 md:flex-row md:items-center md:justify-between">
-                <CardTitle className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                  {hasData ? "Données extraites" : "Paramètres d'extraction"}
-                </CardTitle>
+                <div>
+                  <CardTitle className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                    {hasData ? "Validation de l'écriture comptable" : "Analyser ce document"}
+                  </CardTitle>
+                  {hasData && (
+                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                      Vérifiez les champs extraits par l'IA avant de valider.
+                    </p>
+                  )}
+                </div>
 
                 {hasData && (
                   <div className="flex flex-wrap items-center gap-2">
@@ -221,7 +228,7 @@ export default async function VerificationPage({ params }) {
                 )}
               </CardHeader>
 
-              <CardContent className="flex-1 overflow-y-auto pt-5">
+              <CardContent className="flex flex-col flex-1 overflow-hidden pt-4 px-5">
                 {!hasData ? (
                   <div className="flex h-full flex-col items-center justify-center space-y-6">
                     <div className="text-center">

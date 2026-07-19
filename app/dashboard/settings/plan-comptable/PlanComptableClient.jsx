@@ -13,7 +13,10 @@ import {
 } from "@/components/ui/select"
 import {
   PlusIcon, PencilIcon, SearchIcon, CheckIcon, XIcon,
+  ChevronLeftIcon, ChevronRightIcon,
 } from "lucide-react"
+
+const PAGE_SIZE = 50
 import { createCompteAction, updateCompteAction, toggleActifAction } from "./actions"
 
 const CLASSES = [1, 2, 3, 4, 5, 6, 7, 8]
@@ -36,6 +39,7 @@ export default function PlanComptableClient({ comptes, cabinetId }) {
   const [openAdd,    setOpenAdd]    = useState(false)
   const [editTarget, setEditTarget] = useState(null)
   const [error,      setError]      = useState('')
+  const [page,       setPage]       = useState(1)
   const [isPending,  startTransition] = useTransition()
 
   // Form state for add/edit dialog
@@ -53,6 +57,13 @@ export default function PlanComptableClient({ comptes, cabinetId }) {
     }
     return list
   }, [comptes, search, classeFilter, showInactif])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const safePage   = Math.min(page, totalPages)
+  const paginated  = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
+  // Reset page when filters change
+  useMemo(() => { setPage(1) }, [search, classeFilter, showInactif]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function openAddDialog() {
     setForm({ code: '', libelle: '', classe: '1' })
@@ -233,14 +244,14 @@ export default function PlanComptableClient({ comptes, cabinetId }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-white/[0.04]">
-              {filtered.length === 0 && (
+              {paginated.length === 0 && (
                 <tr>
                   <td colSpan={6} className="text-center py-10 text-slate-400 text-sm">
                     Aucun compte trouvé
                   </td>
                 </tr>
               )}
-              {filtered.map(compte => (
+              {paginated.map(compte => (
                 <tr
                   key={compte.id}
                   className={`transition-colors hover:bg-slate-50/80 dark:hover:bg-white/[0.03] ${
@@ -309,12 +320,61 @@ export default function PlanComptableClient({ comptes, cabinetId }) {
           </table>
         </div>
 
-        <div className="px-4 py-2 border-t border-slate-100 dark:border-white/[0.04] bg-slate-50/50 dark:bg-white/[0.02] text-xs text-slate-400">
-          {filtered.length} compte{filtered.length > 1 ? 's' : ''} affiché{filtered.length > 1 ? 's' : ''}
-          {' · '}
-          {comptes.filter(c => !c.is_standard).length} personnalisé{comptes.filter(c => !c.is_standard).length > 1 ? 's' : ''}
-          {' · '}
-          {comptes.filter(c => c.is_standard).length} CGNC
+        <div className="px-4 py-2.5 border-t border-slate-100 dark:border-white/[0.04] bg-slate-50/50 dark:bg-white/[0.02] flex items-center justify-between gap-4">
+          <span className="text-xs text-slate-400">
+            {filtered.length} résultat{filtered.length > 1 ? 's' : ''}
+            {' · '}
+            {comptes.filter(c => !c.is_standard).length} perso
+            {' · '}
+            {comptes.filter(c => c.is_standard).length} CGNC
+          </span>
+
+          {totalPages > 1 && (
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.06] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeftIcon className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Page number pills */}
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+                .reduce((acc, p, i, arr) => {
+                  if (i > 0 && p - arr[i - 1] > 1) acc.push('…')
+                  acc.push(p)
+                  return acc
+                }, [])
+                .map((p, i) =>
+                  p === '…' ? (
+                    <span key={`ellipsis-${i}`} className="px-1 text-xs text-slate-300 dark:text-slate-600">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p)}
+                      className={`min-w-[28px] h-7 px-1.5 rounded-md text-xs font-medium transition-colors ${
+                        p === safePage
+                          ? 'bg-[#1D9E75] text-white'
+                          : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-white/[0.06] dark:text-slate-400'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                )
+              }
+
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.06] disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRightIcon className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import JSZip from 'jszip'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 import prisma from '@/lib/prisma'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
@@ -35,15 +35,24 @@ export async function POST(request) {
     if (documents.length === 0) return new NextResponse('Documents introuvables.', { status: 404 })
 
     // ── Build recap Excel ─────────────────────────────────────────────────────
-    const rows = documents.map(doc => ({
-      Fichier: doc.nom_fichier,
-      Statut:  doc.statut,
-      ...(doc.donnees_extraites || {}),
-    }))
-    const ws = XLSX.utils.json_to_sheet(rows)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Recapitulatif')
-    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' })
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('Recapitulatif')
+
+    const allKeys = ['Fichier', 'Statut', ...new Set(documents.flatMap(d => Object.keys(d.donnees_extraites || {})))]
+    ws.columns = allKeys.map(k => ({ header: k, width: Math.max(15, k.length + 4) }))
+    ws.getRow(1).font = { bold: true }
+
+    for (const doc of documents) {
+      const data = doc.donnees_extraites || {}
+      ws.addRow(allKeys.map(k => {
+        if (k === 'Fichier') return doc.nom_fichier
+        if (k === 'Statut') return doc.statut
+        const v = data[k]
+        return typeof v === 'object' ? JSON.stringify(v) : (v ?? '')
+      }))
+    }
+
+    const excelBuffer = await wb.xlsx.writeBuffer()
 
     const zip = new JSZip()
     zip.file('00_Recapitulatif_Extraction.xlsx', excelBuffer)

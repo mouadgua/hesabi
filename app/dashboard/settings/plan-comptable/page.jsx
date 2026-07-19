@@ -2,6 +2,7 @@ import { createClient } from '@/utils/supabase/server'
 import { redirect }     from 'next/navigation'
 import prisma           from '@/lib/prisma'
 import PlanComptableClient from './PlanComptableClient'
+import MigrationBanner from './MigrationBanner'
 
 export const metadata = { title: 'Plan comptable — Hesabi' }
 
@@ -20,6 +21,7 @@ export default async function PlanComptablePage() {
 
   let comptes = []
   let migrationPending = false
+  let errorDetail = null
   try {
     comptes = await prisma.compteComptable.findMany({
       where: {
@@ -28,8 +30,9 @@ export default async function PlanComptablePage() {
       },
       orderBy: [{ is_standard: 'asc' }, { code: 'asc' }],
     })
-  } catch {
+  } catch (err) {
     migrationPending = true
+    errorDetail = err?.message ?? null
   }
 
   return (
@@ -42,9 +45,16 @@ export default async function PlanComptablePage() {
       </div>
 
       {migrationPending ? (
-        <div className="rounded-xl border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/5 p-5 text-sm text-amber-800 dark:text-amber-300 space-y-2">
-          <p className="font-semibold">Migration SQL en attente</p>
-          <p>Exécutez <code className="font-mono text-xs bg-amber-100 dark:bg-amber-500/10 px-1 rounded">prisma/add_plan_comptable.sql</code> dans l'éditeur SQL Supabase pour activer cette fonctionnalité.</p>
+        <MigrationBanner sqlPath="prisma/add_plan_comptable.sql" />
+      ) : comptes.length === 0 ? (
+        <div className="rounded-2xl border border-slate-200 dark:border-white/[0.07] bg-slate-50 dark:bg-white/[0.02] p-8 text-center space-y-3">
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Aucun compte disponible</p>
+          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto leading-relaxed">
+            Exécutez le script de seed pour importer les 566 comptes CGNC officiels.
+          </p>
+          <code className="inline-block text-xs font-mono bg-slate-100 dark:bg-white/[0.06] text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10">
+            node prisma/seed-cgnc.js
+          </code>
         </div>
       ) : (
         <PlanComptableClient comptes={comptes} cabinetId={cabinet_id} />

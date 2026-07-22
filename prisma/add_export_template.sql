@@ -16,5 +16,5 @@ ALTER TABLE "ExportTemplate"
   FOREIGN KEY ("cabinet_id") REFERENCES "Cabinet"("id")
   ON DELETE CASCADE ON UPDATE CASCADE;
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "ExportTemplate_cabinet_id_idx"
+CREATE INDEX IF NOT EXISTS "ExportTemplate_cabinet_id_idx"
   ON "ExportTemplate"("cabinet_id");

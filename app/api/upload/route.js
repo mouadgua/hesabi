@@ -3,6 +3,9 @@ import { createClient } from '@/utils/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import prisma from '@/lib/prisma'
 import { validateFileBytes } from '@/lib/sanitize'
+import { classifyAndDetect } from '@/lib/classify'
+
+const CLASSIFY_TIMEOUT_MS = 8000
 
 const supabaseService = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -140,10 +143,37 @@ export async function POST(request) {
     },
   })
 
+  // ── Early classification — runs synchronously before response (max 8s) ────────
+  // base64 is already computed above (magic bytes check) — no extra read needed.
+  // On timeout or error: document is still valid, worker will classify during extraction.
+  let earlyClassification = null
+  try {
+    const result = await Promise.race([
+      classifyAndDetect(base64, file.type),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), CLASSIFY_TIMEOUT_MS)),
+    ])
+    if (result) {
+      earlyClassification = result
+      await prisma.document.update({
+        where: { id: doc.id },
+        data: {
+          document_type:              result.type,
+          document_type_confidence:   result.confidence,
+          fournisseur_detecte:        result.fournisseur,
+          document_language_detected: result.language,
+        },
+      })
+    }
+  } catch (err) {
+    console.warn('[Upload] Early classification skipped:', err.message)
+  }
+
   return NextResponse.json({
-    documentId:  doc.id,
-    nom_fichier: doc.nom_fichier,
-    statut:      doc.statut,
-    createdAt:   doc.createdAt.toISOString(),
+    documentId:    doc.id,
+    nom_fichier:   doc.nom_fichier,
+    statut:        doc.statut,
+    createdAt:     doc.createdAt.toISOString(),
+    document_type: earlyClassification?.type ?? null,
+    document_language_detected: earlyClassification?.language ?? null,
   })
 }

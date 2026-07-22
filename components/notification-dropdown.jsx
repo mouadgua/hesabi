@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { BellIcon, CheckCircleIcon, ClockIcon, XCircleIcon, ExternalLinkIcon } from "lucide-react"
+import { BellIcon, CheckCircleIcon, ClockIcon, XCircleIcon, ExternalLinkIcon, CheckIcon } from "lucide-react"
 import Link from "next/link"
 import { useNotifications } from "@/components/notification-context"
 
@@ -35,19 +35,17 @@ function timeAgo(date) {
 }
 
 export default function NotificationDropdown() {
-  const { count: pendingCount, notifications, refresh } = useNotifications()
+  const { count: pendingCount, notifications, refresh, dismiss, dismissAll } = useNotifications()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const ref = useRef(null)
 
-  // Re-fetch with loading indicator each time the dropdown opens
   useEffect(() => {
     if (!open) return
     setLoading(true)
     refresh().finally(() => setLoading(false))
   }, [open, refresh])
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return
     function handleClick(e) {
@@ -57,7 +55,6 @@ export default function NotificationDropdown() {
     return () => document.removeEventListener("mousedown", handleClick)
   }, [open])
 
-  // Close on Escape
   useEffect(() => {
     if (!open) return
     function handleKey(e) {
@@ -67,15 +64,11 @@ export default function NotificationDropdown() {
     return () => document.removeEventListener("keydown", handleKey)
   }, [open])
 
-  function toggle() {
-    setOpen(v => !v)
-  }
-
   return (
     <div className="relative" ref={ref}>
       {/* Bell trigger */}
       <button
-        onClick={toggle}
+        onClick={() => setOpen(v => !v)}
         aria-label="Notifications"
         aria-expanded={open}
         className="relative flex h-8 w-8 items-center justify-center rounded-full transition-all hover:bg-slate-100 dark:hover:bg-white/[0.08] cursor-pointer"
@@ -94,11 +87,23 @@ export default function NotificationDropdown() {
 
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-white/[0.06]">
-            <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Notifications</span>
-            {pendingCount > 0 && (
-              <span className="text-[10px] font-bold text-white bg-[#1D9E75] rounded-full px-2 py-0.5">
-                {pendingCount > 99 ? "99+" : pendingCount}
-              </span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Notifications</span>
+              {pendingCount > 0 && (
+                <span className="text-[10px] font-bold text-white bg-[#1D9E75] rounded-full px-2 py-0.5">
+                  {pendingCount > 99 ? "99+" : pendingCount}
+                </span>
+              )}
+            </div>
+            {notifications.length > 0 && (
+              <button
+                onClick={dismissAll}
+                className="flex items-center gap-1 text-[11px] font-medium text-slate-400 hover:text-[#1D9E75] dark:hover:text-[#1D9E75] transition-colors"
+                title="Marquer tout comme lu"
+              >
+                <CheckIcon className="w-3 h-3" />
+                Tout lire
+              </button>
             )}
           </div>
 
@@ -131,14 +136,16 @@ export default function NotificationDropdown() {
                   const Icon = cfg.icon
                   const filename = notif.nom_fichier?.replace(/^[a-z0-9]+_\d+\./, '') ?? 'Document'
                   const title = notif.fournisseur_detecte || filename
-                  const sub = notif.client?.nom_entreprise ? `${notif.client.nom_entreprise} · ${cfg.label}` : cfg.label
+                  const sub = notif.client?.nom_entreprise
+                    ? `${notif.client.nom_entreprise} · ${cfg.label}`
+                    : cfg.label
 
                   return (
-                    <li key={notif.id}>
+                    <li key={notif.id} className="group relative flex items-start">
                       <Link
                         href={`/dashboard/verification/${notif.id}`}
                         onClick={() => setOpen(false)}
-                        className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors"
+                        className="flex flex-1 items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-white/[0.03] transition-colors pr-10"
                       >
                         <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${cfg.className}`}>
                           <Icon className="size-4" />
@@ -151,6 +158,16 @@ export default function NotificationDropdown() {
                           {timeAgo(notif.updatedAt)}
                         </span>
                       </Link>
+
+                      {/* Mark as read button — visible on hover */}
+                      <button
+                        onClick={() => dismiss(notif.id)}
+                        title="Marquer comme lu"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 flex items-center justify-center h-6 w-6 rounded-full bg-slate-100 dark:bg-white/[0.08] hover:bg-[#E1F5EE] dark:hover:bg-[#1D9E75]/20 hover:text-[#1D9E75] text-slate-400 transition-all"
+                        aria-label="Marquer comme lu"
+                      >
+                        <CheckIcon className="w-3 h-3" />
+                      </button>
                     </li>
                   )
                 })}
@@ -161,7 +178,7 @@ export default function NotificationDropdown() {
           {/* Footer */}
           <div className="border-t border-slate-100 dark:border-white/[0.06] px-4 py-2.5">
             <Link
-              href="/dashboard/verification"
+              href="/dashboard/notifications"
               onClick={() => setOpen(false)}
               className="flex items-center justify-center gap-1.5 text-xs font-medium text-[#1D9E75] hover:text-[#0F6E56] dark:hover:text-[#1D9E75]/80 transition-colors"
             >

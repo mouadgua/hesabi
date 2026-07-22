@@ -25,6 +25,7 @@ export function Providers({ children }) {
       attribute="class"
       defaultTheme="light"
       disableTransitionOnChange
+      scriptProps={{ suppressHydrationWarning: true }}
     >
       {children}
       <ThemedToaster />

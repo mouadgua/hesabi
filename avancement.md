@@ -21,6 +21,7 @@
 | Sécurité & hardening | ✅ Complet (post-audit) |
 | Système de crédits | ✅ Corrigé (race condition fixée) |
 | Pipeline hybride Azure OCR (Phase 1+2/4) | ✅ Complet — activable par cabinet |
+| Classification précoce à l'upload | ✅ Complet — type + langue détectés dès l'upload |
 | Abonnement / Stripe | 🔴 Non démarré |
 | Rate limiter distribué (Redis) | 🟡 À faire |
 | Pagination documents | 🟡 À faire |
@@ -46,6 +47,11 @@
 - NProgress entre les navigations
 
 ### Pipeline IA
+- **Classification précoce à l'upload** : type + langue détectés dès la fin de l'upload (8s timeout, non bloquant si échec)
+- `lib/classify.js` : `classifyAndDetect()` — appel IA léger (200 tokens, cache) retournant `{ type, confidence, fournisseur, language }`
+- `Document.document_language_detected` : nouveau champ ("fr" | "ar" | "en" | "es" | "other") — migration `prisma/add_upload_classification.sql`
+- Worker : skip la re-classification si `document_type` est déjà renseigné (économie d'un appel IA)
+- Réponse `/api/upload` inclut `document_type` + `document_language_detected` si classification réussie
 - Classification automatique du document (facture / relevé / bon commande / reçu)
 - Matching automatique template → type de document détecté
 - Extraction Gemini 2.5 Flash Lite (PDF via REST v1beta) → fallback Flash
@@ -281,6 +287,7 @@ app/
 
 lib/
 ├── ai.js                    Pipeline IA (Gemini + OpenRouter + circuit breaker + cache)
+├── classify.js              ✅ Classification précoce (type + langue) — utilisé à l'upload et en fallback worker
 ├── prisma.js                Singleton Prisma
 ├── rateLimiter.js           Rate limiter démo (in-memory — à migrer Redis)
 ├── sanitize.js              Validation inputs (email, MIME, magic bytes)
@@ -301,8 +308,9 @@ components/
 
 prisma/
 ├── schema.prisma            14 modèles — ExportTemplate ajouté
-├── add_missing_indexes.sql  ✅ SQL prêt pour Supabase dashboard
-└── add_export_template.sql  ✅ SQL à exécuter pour créer ExportTemplate
+├── add_missing_indexes.sql      ✅ SQL prêt pour Supabase dashboard
+├── add_export_template.sql      ✅ SQL à exécuter pour créer ExportTemplate
+└── add_upload_classification.sql ✅ SQL à exécuter — ajoute document_language_detected
 ```
 
 ---
@@ -346,10 +354,11 @@ Lancé avec `npm test` (Jest + ESM).
 
 | # | Action | Effort | Prérequis |
 |---|---|---|---|
-| 1 | Exécuter `prisma/add_missing_indexes.sql` sur Supabase | 5 min | — |
-| 2 | Configurer Upstash Redis + migrer rate limiter | 2h | Compte Upstash |
-| 3 | ~~Toggle FR/EN export-modal~~ | ✅ Fait | — |
-| 4 | Pagination documents (`take: 25` + cursor) | 4h | — |
-| 5 | ~~Migration `xlsx` → `exceljs`~~ | ✅ Fait | — |
-| 6 | Exécuter `prisma/add_export_template.sql` sur Supabase | 5 min | — |
-| 7 | Intégration Stripe (post-bêta) | 2 jours | Compte Stripe |
+| 1 | Exécuter `prisma/add_upload_classification.sql` sur Supabase | 2 min | — |
+| 2 | Exécuter `prisma/add_missing_indexes.sql` sur Supabase | 5 min | — |
+| 3 | Configurer Upstash Redis + migrer rate limiter | 2h | Compte Upstash |
+| 4 | ~~Toggle FR/EN export-modal~~ | ✅ Fait | — |
+| 5 | Pagination documents (`take: 25` + cursor) | 4h | — |
+| 6 | ~~Migration `xlsx` → `exceljs`~~ | ✅ Fait | — |
+| 7 | Exécuter `prisma/add_export_template.sql` sur Supabase | 5 min | — |
+| 8 | Intégration Stripe (post-bêta) | 2 jours | Compte Stripe |

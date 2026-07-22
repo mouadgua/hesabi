@@ -35,6 +35,15 @@
 - Onboarding guidé post-inscription (`/onboarding`)
 - Middleware d'authentification edge (`middleware.js`) — protège `/dashboard/**` et `/api/admin/**`
 
+### Upload
+- Déduplication par hash (avertissement, pas de blocage automatique) : terminé
+  - `crypto.createHash('sha256')` sur les bytes bruts, calculé une seule fois avec les magic bytes
+  - Check scoped au cabinet (`Document.file_hash` + relation `client.cabinet_id`, IDOR-safe)
+  - Doublon détecté → réponse `{ duplicate: true, existingDocument }` (HTTP 200, pas une erreur) — aucun crédit consommé
+  - Confirmation utilisateur : renvoyer la requête avec `force_upload=true` pour uploader malgré tout
+  - Upload en masse : chaque fichier est indépendant, un doublon ne bloque pas les autres fichiers du batch
+  - Migration SQL : `prisma/add_deduplication.sql`
+
 ### File manager
 - Upload multi-fichiers (PDF, JPG, PNG, WEBP, HEIC — max 20 Mo)
 - Validation magic bytes côté serveur (anti-spoofing)
@@ -302,7 +311,8 @@ components/
 prisma/
 ├── schema.prisma            14 modèles — ExportTemplate ajouté
 ├── add_missing_indexes.sql  ✅ SQL prêt pour Supabase dashboard
-└── add_export_template.sql  ✅ SQL à exécuter pour créer ExportTemplate
+├── add_export_template.sql  ✅ SQL à exécuter pour créer ExportTemplate
+└── add_deduplication.sql    ✅ SQL à exécuter — ajoute Document.file_hash + index
 ```
 
 ---
@@ -346,10 +356,11 @@ Lancé avec `npm test` (Jest + ESM).
 
 | # | Action | Effort | Prérequis |
 |---|---|---|---|
-| 1 | Exécuter `prisma/add_missing_indexes.sql` sur Supabase | 5 min | — |
-| 2 | Configurer Upstash Redis + migrer rate limiter | 2h | Compte Upstash |
-| 3 | ~~Toggle FR/EN export-modal~~ | ✅ Fait | — |
-| 4 | Pagination documents (`take: 25` + cursor) | 4h | — |
-| 5 | ~~Migration `xlsx` → `exceljs`~~ | ✅ Fait | — |
-| 6 | Exécuter `prisma/add_export_template.sql` sur Supabase | 5 min | — |
-| 7 | Intégration Stripe (post-bêta) | 2 jours | Compte Stripe |
+| 1 | Exécuter `prisma/add_deduplication.sql` sur Supabase | 2 min | — |
+| 2 | Exécuter `prisma/add_missing_indexes.sql` sur Supabase | 5 min | — |
+| 3 | Configurer Upstash Redis + migrer rate limiter | 2h | Compte Upstash |
+| 4 | ~~Toggle FR/EN export-modal~~ | ✅ Fait | — |
+| 5 | Pagination documents (`take: 25` + cursor) | 4h | — |
+| 6 | ~~Migration `xlsx` → `exceljs`~~ | ✅ Fait | — |
+| 7 | Exécuter `prisma/add_export_template.sql` sur Supabase | 5 min | — |
+| 8 | Intégration Stripe (post-bêta) | 2 jours | Compte Stripe |

@@ -35,6 +35,14 @@
 - Onboarding guidé post-inscription (`/onboarding`)
 - Middleware d'authentification edge (`middleware.js`) — protège `/dashboard/**` et `/api/admin/**`
 
+### Upload
+- Vérification des crédits avant lancement d'un batch : terminé
+  - `GET /api/upload/precheck?count=N` : lecture seule (`cabinet.credits >= N`), aucun décrément — la déduction atomique reste l'unique source de vérité, pas de risque de race condition réintroduite
+  - Déclenché côté client (`ExtractionHub.jsx`) avant tout batch multi-fichiers (upload multiple + dossier complet)
+  - Crédits insuffisants → modale explicite : "Uploader les N premiers fichiers" ou "Annuler" — jamais d'échec silencieux à mi-parcours
+  - Comportement par défaut (fermeture modale, Échap, clic extérieur) = Annuler → aucun upload partiel sans confirmation explicite
+  - Upload fichier unique inchangé (déjà protégé par la déduction atomique existante)
+
 ### File manager
 - Upload multi-fichiers (PDF, JPG, PNG, WEBP, HEIC — max 20 Mo)
 - Validation magic bytes côté serveur (anti-spoofing)
@@ -264,6 +272,7 @@ app/
 └── api/
     ├── health/              Ping DB (monitoring)
     ├── upload/              Upload fichier → Supabase + DB
+    │   └── precheck/        ✅ Vérif crédits batch (lecture seule, avant upload multiple)
     ├── worker-extraction/   Pipeline IA (classif + extraction)
     ├── export/              Export Excel/CSV (exceljs, groupement, colonnes calculées)
     ├── export-mass/         Export ZIP (exceljs recap + originaux)

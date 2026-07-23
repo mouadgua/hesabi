@@ -92,6 +92,7 @@ export default function ExtractionHub({
   const [uploadProgress, setUploadProgress] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [creditsModal, setCreditsModal] = useState(null) // { files, folderGetter, available }
   const [aiError, setAiError] = useState(null)
   const [isIOS, setIsIOS] = useState(false)
   const [, startTransition] = useTransition()
@@ -194,6 +195,19 @@ export default function ExtractionHub({
     )
   }
 
+  // ── Credits precheck (server-verified) — avoids starting a batch the ─────
+  // cabinet can't afford. Read-only: the atomic decrement in /api/upload
+  // remains the sole source of truth against race conditions.
+  async function checkCreditsSufficient(count) {
+    try {
+      const res = await fetch(`/api/upload/precheck?count=${count}`)
+      if (!res.ok) return { sufficient: count <= credits, credits }
+      return await res.json()
+    } catch {
+      return { sufficient: count <= credits, credits }
+    }
+  }
+
   // ── Core upload with retry ────────────────────────────────────────────────
 
   async function uploadSequential(files, getDossierId = () => null) {
@@ -273,13 +287,20 @@ export default function ExtractionHub({
       toast.warning(`Fichier déjà présent : ${names}. L'upload continuera quand même.`)
     }
 
+    // Batch credits precheck — only relevant for multi-file batches.
+    // Single-file uploads are already covered by the per-file atomic check.
+    if (valid.length > 1) {
+      const check = await checkCreditsSufficient(valid.length)
+      if (!check.sufficient) {
+        setCreditsModal({ files: valid, available: check.credits })
+        return
+      }
+    }
+
     await uploadSequential(valid)
   }
 
-  async function handleFolderFiles(rawFiles) {
-    const valid = validateFiles(rawFiles)
-    if (valid.length === 0) return
-
+  async function runFolderUpload(valid) {
     const uniquePaths = [...new Set(
       valid.flatMap(f => {
         const parts = f.webkitRelativePath.split('/')
@@ -312,6 +333,21 @@ export default function ExtractionHub({
       const folderPath = parts.join('/')
       return folderPath ? pathToId[folderPath] ?? null : null
     })
+  }
+
+  async function handleFolderFiles(rawFiles) {
+    const valid = validateFiles(rawFiles)
+    if (valid.length === 0) return
+
+    if (valid.length > 1) {
+      const check = await checkCreditsSufficient(valid.length)
+      if (!check.sufficient) {
+        setCreditsModal({ files: valid, available: check.credits, isFolder: true })
+        return
+      }
+    }
+
+    await runFolderUpload(valid)
   }
 
   // ── Drag & drop ───────────────────────────────────────────────────────────
@@ -845,6 +881,44 @@ export default function ExtractionHub({
             <AlertDialogAction onClick={executeDelete} className="bg-red-600 hover:bg-red-700 text-white">
               Supprimer
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!creditsModal} onOpenChange={open => !open && setCreditsModal(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Crédits insuffisants</AlertDialogTitle>
+            <AlertDialogDescription>
+              {creditsModal?.available > 0 ? (
+                <>
+                  Vous avez sélectionné <strong>{creditsModal?.files.length} fichiers</strong>, mais il ne vous reste que{' '}
+                  <strong>{creditsModal?.available} extraction{creditsModal?.available > 1 ? 's' : ''}</strong>.
+                  Voulez-vous uploader uniquement les {creditsModal?.available} premiers fichiers couverts par votre quota, ou annuler ?
+                </>
+              ) : (
+                <>
+                  Vous avez sélectionné <strong>{creditsModal?.files.length} fichiers</strong>, mais votre quota d'extractions est épuisé.
+                  Rechargez votre compte pour continuer.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setCreditsModal(null)}>Annuler</AlertDialogCancel>
+            {creditsModal?.available > 0 && (
+              <AlertDialogAction
+                onClick={() => {
+                  const { files, available, isFolder } = creditsModal
+                  const truncated = files.slice(0, available)
+                  setCreditsModal(null)
+                  if (isFolder) runFolderUpload(truncated)
+                  else uploadSequential(truncated)
+                }}
+              >
+                Uploader les {creditsModal?.available} premiers
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

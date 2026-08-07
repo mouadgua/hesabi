@@ -122,6 +122,7 @@ model Document {
   document_type_confidence    Float?
   fournisseur_detecte         String?
   document_language_detected  String?        // "fr" | "ar" | "en" | "es" | "other"
+  file_hash                   String?        // SHA-256 hex du fichier brut — détection de doublons
   error_message               String?        @db.Text
   // AI tracking fields
   ai_provider                 String?        // gemini-pdf | claude-haiku | gpt-4o | gemini-flash | qwen
@@ -143,6 +144,7 @@ model Document {
   @@index([statut, updatedAt])
   @@index([template_id])
   @@index([dossier_id])
+  @@index([file_hash])
 }
 
 // --- 5. LEARNING LOOP ---

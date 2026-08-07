@@ -67,6 +67,10 @@ export async function POST(request) {
     return NextResponse.json({ error: bytesCheck.error }, { status: 400 })
   }
 
+  // ── Content hash — used for duplicate detection within the cabinet ────────
+  const fileHash   = crypto.createHash('sha256').update(bytes).digest('hex')
+  const forceUpload = formData.get('force_upload') === 'true'
+
   // ── Cabinet + credits ─────────────────────────────────────────────────────
   const utilisateur = await prisma.utilisateur.findUnique({
     where: { id: user.id }, select: { cabinet_id: true }
@@ -107,6 +111,27 @@ export async function POST(request) {
     targetClient = await getOrCreateDefaultClient(utilisateur.cabinet_id)
   }
 
+  // ── Duplicate detection — warn, don't block (unless the user confirmed) ───
+  // Scoped to this cabinet via the Client relation (IDOR-safe).
+  if (!forceUpload) {
+    const existing = await prisma.document.findFirst({
+      where: { file_hash: fileHash, client: { cabinet_id: utilisateur.cabinet_id } },
+      select: { id: true, nom_fichier: true, statut: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (existing) {
+      return NextResponse.json({
+        duplicate: true,
+        existingDocument: {
+          id:         existing.id,
+          nom_fichier: existing.nom_fichier,
+          statut:     existing.statut,
+          createdAt:  existing.createdAt.toISOString(),
+        },
+      })
+    }
+  }
+
   // ── Atomic credit deduction BEFORE upload — prevents race condition and orphan files
   const creditResult = await prisma.cabinet.updateMany({
     where: { id: cabinet.id, credits: { gte: 1 } },
@@ -140,6 +165,7 @@ export async function POST(request) {
       nom_fichier:    file.name.slice(0, 255),  // Store original name for display only
       chemin_storage: filePath,
       statut:         'A_EXTRAIRE',
+      file_hash:      fileHash,
     },
   })
 

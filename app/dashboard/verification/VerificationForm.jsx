@@ -50,6 +50,9 @@ function FieldRow({ fieldKey, value, editMode, isExtra, isExcluded, onToggle, on
   const displayValue = isComplex ? JSON.stringify(value, null, 2) : String(value ?? '')
   const isEmpty = value === '' || value == null
 
+  // Hide undetected fields when not in edit mode — no clutter for the user
+  if (isEmpty && !editMode && !isExcluded) return null
+
   if (isExcluded) {
     return (
       <div className="flex items-center gap-3 py-2.5 opacity-40">

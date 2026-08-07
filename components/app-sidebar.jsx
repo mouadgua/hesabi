@@ -349,6 +349,7 @@ export function AppSidebar({ user, cabinet, clients = [], ...props }) {
     .toUpperCase()
 
   const notifActive =
+    pathname === "/dashboard/notifications" ||
     pathname === "/dashboard/verification" ||
     pathname.startsWith("/dashboard/verification/")
 
@@ -394,7 +395,7 @@ export function AppSidebar({ user, cabinet, clients = [], ...props }) {
         {/* Notifications */}
         <div className="mt-0.5">
           <Link
-            href="/dashboard/verification"
+            href="/dashboard/notifications"
             className={[
               "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150",
               "border-l-2",

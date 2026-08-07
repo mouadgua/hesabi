@@ -12,5 +12,5 @@ ALTER TABLE "Document"
   ADD COLUMN IF NOT EXISTS "extraction_cost_est"    FLOAT;
 
 -- Optional: index for cost analysis in admin dashboard
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "Document_extraction_method_used_idx"
+CREATE INDEX IF NOT EXISTS "Document_extraction_method_used_idx"
   ON "Document" ("extraction_method_used");

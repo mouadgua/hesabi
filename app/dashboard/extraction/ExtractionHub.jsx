@@ -24,12 +24,59 @@ import {
 } from "lucide-react"
 import { FirstVisitHint } from "@/components/first-visit-hint"
 import AIErrorModal, { getAIErrorCode } from "@/components/ai-error-modal"
+import { validateFileClientSide } from "@/lib/clientValidation"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const ACCEPTED_EXTS  = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'heic']
 const ACCEPT_ATTR    = '.pdf,.jpg,.jpeg,.png,.webp,.heic'
 const MAX_RETRIES    = 2
+const POOL_SIZE      = 12 // concurrent uploads per batch — keeps small batches (1-5 files) just as fast
+
+// ── Batch resilience (localStorage) ───────────────────────────────────────────
+// Tracks which files (by fingerprint) were already successfully uploaded, so a
+// batch interrupted by a network drop / page reload can be resumed by simply
+// re-selecting the same files — already-done ones are skipped automatically.
+
+const PROGRESS_KEY   = 'hesabi_upload_progress'
+const FP_MAX_AGE_MS  = 48 * 60 * 60 * 1000
+const FP_MAX_ENTRIES = 3000
+
+function fingerprintOf(file) {
+  return `${file.name}__${file.size}__${file.lastModified}`
+}
+
+function loadProgress() {
+  try {
+    const raw = localStorage.getItem(PROGRESS_KEY)
+    if (!raw) return { lastBatch: null, doneFingerprints: {} }
+    const data = JSON.parse(raw)
+    const now = Date.now()
+    const doneFingerprints = {}
+    for (const [fp, at] of Object.entries(data.doneFingerprints ?? {})) {
+      if (now - at < FP_MAX_AGE_MS) doneFingerprints[fp] = at
+    }
+    return { lastBatch: data.lastBatch ?? null, doneFingerprints }
+  } catch {
+    return { lastBatch: null, doneFingerprints: {} }
+  }
+}
+
+function saveProgress(progress) {
+  try {
+    const entries = Object.entries(progress.doneFingerprints)
+    const doneFingerprints = entries.length > FP_MAX_ENTRIES
+      ? Object.fromEntries(entries.sort((a, b) => b[1] - a[1]).slice(0, FP_MAX_ENTRIES))
+      : progress.doneFingerprints
+    localStorage.setItem(PROGRESS_KEY, JSON.stringify({ ...progress, doneFingerprints }))
+  } catch { /* localStorage unavailable — resilience degrades silently, upload still works */ }
+}
+
+function clearLastBatch() {
+  const progress = loadProgress()
+  progress.lastBatch = null
+  saveProgress(progress)
+}
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 
@@ -95,7 +142,10 @@ export default function ExtractionHub({
   const [creditsModal, setCreditsModal] = useState(null) // { files, folderGetter, available }
   const [aiError, setAiError] = useState(null)
   const [isIOS, setIsIOS] = useState(false)
+  const [resumeBanner, setResumeBanner] = useState(null) // { batchId, total, done }
   const [, startTransition] = useTransition()
+
+  const progressRef = useRef(null) // in-memory mirror of localStorage progress during an active batch
 
   // ── Search & filter state ─────────────────────────────────────────────────
   const [query,        setQuery]        = useState(initialSearch)
@@ -127,6 +177,14 @@ export default function ExtractionHub({
   // ── iOS / mobile detection (folder upload not supported on iOS) ───────────
   useEffect(() => {
     setIsIOS(/iPhone|iPad|iPod/i.test(navigator.userAgent))
+  }, [])
+
+  // ── Detect an interrupted batch from a previous session ───────────────────
+  useEffect(() => {
+    const { lastBatch } = loadProgress()
+    if (lastBatch && lastBatch.done < lastBatch.total) {
+      setResumeBanner(lastBatch)
+    }
   }, [])
 
   // ── Supabase Realtime — listen to Document updates ────────────────────────
@@ -172,16 +230,32 @@ export default function ExtractionHub({
     return () => clearInterval(timer)
   }, [docs])
 
-  // ── File validation ───────────────────────────────────────────────────────
+  // ── File validation (extension + client-side corruption checks) ──────────
+  // Runs all checks concurrently — these are local/in-memory operations
+  // (no network), so even 700 files validate in well under a second.
 
-  function validateFiles(fileList) {
-    const valid = []
-    for (const file of fileList) {
+  async function validateFiles(fileList) {
+    const results = await Promise.all(fileList.map(async (file) => {
       const ext = file.name.split('.').pop().toLowerCase()
       if (!ACCEPTED_EXTS.includes(ext)) {
-        toast.error(`Format non supporté : ${file.name}`)
-      } else {
-        valid.push(file)
+        return { file, error: `Format non supporté : ${file.name}` }
+      }
+      const check = await validateFileClientSide(file)
+      if (!check.valid) return { file, error: check.error }
+      return { file, error: null }
+    }))
+
+    const valid  = []
+    const errors = []
+    for (const r of results) {
+      if (r.error) errors.push(r.error)
+      else valid.push(r.file)
+    }
+    if (errors.length > 0) {
+      const shown = errors.slice(0, 5)
+      shown.forEach(e => toast.error(e))
+      if (errors.length > shown.length) {
+        toast.error(`+ ${errors.length - shown.length} autre(s) fichier(s) rejeté(s).`)
       }
     }
     return valid
@@ -208,13 +282,53 @@ export default function ExtractionHub({
     }
   }
 
-  // ── Core upload with retry ────────────────────────────────────────────────
+  // ── Fingerprint-based resume: split a selection into files already ───────
+  // uploaded (skip) vs. still needing upload, and register a batch in
+  // localStorage so progress survives a page reload.
+  function prepareBatch(valid) {
+    const progress = loadProgress()
+    const toUpload = []
+    let alreadyDoneCount = 0
+    for (const f of valid) {
+      if (fingerprintOf(f) in progress.doneFingerprints) alreadyDoneCount++
+      else toUpload.push(f)
+    }
+    if (alreadyDoneCount > 0) {
+      toast.info(`${alreadyDoneCount} fichier${alreadyDoneCount > 1 ? 's' : ''} déjà envoyé${alreadyDoneCount > 1 ? 's' : ''} précédemment, ignoré${alreadyDoneCount > 1 ? 's' : ''}.`)
+    }
 
-  async function uploadSequential(files, getDossierId = () => null) {
-    setUploadProgress({ current: 0, total: files.length })
+    const batchId = crypto.randomUUID()
+    progress.lastBatch = { batchId, total: valid.length, done: alreadyDoneCount }
+    saveProgress(progress)
+    progressRef.current = progress
+    setResumeBanner(null)
+
+    return { batchId, toUpload, total: valid.length, alreadyDoneCount }
+  }
+
+  function markFingerprintDone(fp, batchId) {
+    const progress = progressRef.current
+    if (!progress) return
+    progress.doneFingerprints[fp] = Date.now()
+    if (progress.lastBatch?.batchId === batchId) {
+      progress.lastBatch.done += 1
+      if (progress.lastBatch.done >= progress.lastBatch.total) {
+        progress.lastBatch = null
+        setResumeBanner(null)
+      }
+    }
+    saveProgress(progress)
+  }
+
+  // ── Core upload with retry + bounded concurrency ──────────────────────────
+
+  async function uploadWithPool(files, getDossierId, batchId, batchTotal, startCount) {
+    setUploadProgress({ current: startCount, total: batchTotal })
     const uploaded = []
+    let doneCount = startCount
+    let idx = 0
 
-    for (const file of files) {
+    async function uploadOne(file) {
       const fd = new FormData()
       fd.append('file', file)
       const dossierId = await getDossierId(file)
@@ -222,7 +336,6 @@ export default function ExtractionHub({
       // Attach to active client so docs stay visible in filtered view after reload
       if (activeClient?.id) fd.append('client_id', activeClient.id)
 
-      let success = false
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         if (attempt > 0) {
           await new Promise(r => setTimeout(r, 800 * attempt))
@@ -242,42 +355,53 @@ export default function ExtractionHub({
               error_message: null,
               createdAt:     new Date().toISOString(),
             })
-            success = true
-            break
+            markFingerprintDone(fingerprintOf(file), batchId)
+            return true
           } else if (res.status === 400 && data.error?.includes('Crédits')) {
             toast.error(data.error, {
               action: { label: 'Voir les plans', onClick: () => router.push('/dashboard/settings/billing') }
             })
-            success = true // don't retry credit errors
-            break
+            return false // don't retry credit errors
           } else {
             if (attempt === MAX_RETRIES) toast.error(data.error ?? `Échec : ${file.name}`)
           }
         } catch {
           if (attempt === MAX_RETRIES) {
-            toast.error(`Connexion perdue pour ${file.name}. Vérifiez votre connexion internet.`, {
-              action: { label: 'Réessayer', onClick: () => handleFiles([file]) }
-            })
+            toast.error(`Connexion perdue pour ${file.name}. Relancez le même lot pour reprendre — les fichiers déjà envoyés seront ignorés.`)
           }
         }
       }
-
-      setUploadProgress(p => ({ ...p, current: p.current + 1 }))
-      if (!success) continue
+      return false
     }
+
+    async function worker() {
+      while (idx < files.length) {
+        const i = idx++
+        await uploadOne(files[i])
+        doneCount++
+        setUploadProgress({ current: doneCount, total: batchTotal })
+      }
+    }
+
+    const workerCount = Math.min(POOL_SIZE, files.length)
+    await Promise.all(Array.from({ length: workerCount }, worker))
 
     setUploadProgress(null)
     if (uploaded.length > 0) {
       setDocs(prev => [...uploaded, ...prev])
       setCredits(c => c - uploaded.length)
-      toast.success(`${uploaded.length} fichier${uploaded.length > 1 ? 's uploadés' : ' uploadé'}.`)
+      const failedCount = files.length - uploaded.length
+      toast.success(
+        `${uploaded.length} fichier${uploaded.length > 1 ? 's uploadés' : ' uploadé'}` +
+        (failedCount > 0 ? ` (${failedCount} en échec — relancez le même lot pour les reprendre).` : '.')
+      )
     }
   }
 
   // ── Upload handlers ───────────────────────────────────────────────────────
 
   async function handleFiles(rawFiles) {
-    const valid = validateFiles(rawFiles)
+    const valid = await validateFiles(rawFiles)
     if (valid.length === 0) return
 
     // Duplicate detection
@@ -287,22 +411,28 @@ export default function ExtractionHub({
       toast.warning(`Fichier déjà présent : ${names}. L'upload continuera quand même.`)
     }
 
-    // Batch credits precheck — only relevant for multi-file batches.
+    const { batchId, toUpload, total, alreadyDoneCount } = prepareBatch(valid)
+    if (toUpload.length === 0) {
+      toast.success('Tous les fichiers de cette sélection ont déjà été envoyés.')
+      return
+    }
+
+    // Batch credits precheck — only relevant for multi-file batches still needing upload.
     // Single-file uploads are already covered by the per-file atomic check.
-    if (valid.length > 1) {
-      const check = await checkCreditsSufficient(valid.length)
+    if (toUpload.length > 1) {
+      const check = await checkCreditsSufficient(toUpload.length)
       if (!check.sufficient) {
-        setCreditsModal({ files: valid, available: check.credits })
+        setCreditsModal({ files: toUpload, available: check.credits, batchId, total, alreadyDoneCount })
         return
       }
     }
 
-    await uploadSequential(valid)
+    await uploadWithPool(toUpload, () => null, batchId, total, alreadyDoneCount)
   }
 
-  async function runFolderUpload(valid) {
+  async function runFolderUpload(files, batchId, total, alreadyDoneCount) {
     const uniquePaths = [...new Set(
-      valid.flatMap(f => {
+      files.flatMap(f => {
         const parts = f.webkitRelativePath.split('/')
         parts.pop()
         return parts.map((_, i) => parts.slice(0, i + 1).join('/'))
@@ -327,27 +457,33 @@ export default function ExtractionHub({
     }
     toast.dismiss(toastId)
 
-    await uploadSequential(valid, async (file) => {
+    await uploadWithPool(files, async (file) => {
       const parts = file.webkitRelativePath.split('/')
       parts.pop()
       const folderPath = parts.join('/')
       return folderPath ? pathToId[folderPath] ?? null : null
-    })
+    }, batchId, total, alreadyDoneCount)
   }
 
   async function handleFolderFiles(rawFiles) {
-    const valid = validateFiles(rawFiles)
+    const valid = await validateFiles(rawFiles)
     if (valid.length === 0) return
 
-    if (valid.length > 1) {
-      const check = await checkCreditsSufficient(valid.length)
+    const { batchId, toUpload, total, alreadyDoneCount } = prepareBatch(valid)
+    if (toUpload.length === 0) {
+      toast.success('Tous les fichiers de ce dossier ont déjà été envoyés.')
+      return
+    }
+
+    if (toUpload.length > 1) {
+      const check = await checkCreditsSufficient(toUpload.length)
       if (!check.sufficient) {
-        setCreditsModal({ files: valid, available: check.credits, isFolder: true })
+        setCreditsModal({ files: toUpload, available: check.credits, isFolder: true, batchId, total, alreadyDoneCount })
         return
       }
     }
 
-    await runFolderUpload(valid)
+    await runFolderUpload(toUpload, batchId, total, alreadyDoneCount)
   }
 
   // ── Drag & drop ───────────────────────────────────────────────────────────
@@ -521,6 +657,25 @@ export default function ExtractionHub({
           <div className="flex items-center gap-3 px-4 py-2.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl text-xs text-amber-700 dark:text-amber-400">
             <AlertTriangleIcon className="w-4 h-4 shrink-0" />
             <span>Il ne vous reste que <strong>{credits} extraction{credits > 1 ? 's' : ''}</strong>. Chaque upload décompte 1 crédit.</span>
+          </div>
+        )}
+
+        {/* ── Resume banner (interrupted batch from a previous session) ── */}
+        {resumeBanner && (
+          <div className="flex items-center gap-3 px-4 py-2.5 bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 rounded-xl text-xs text-blue-700 dark:text-blue-400">
+            <AlertTriangleIcon className="w-4 h-4 shrink-0" />
+            <span className="flex-1">
+              Un envoi de <strong>{resumeBanner.total} fichiers</strong> a été interrompu ({resumeBanner.done}/{resumeBanner.total} envoyés).
+              Re-sélectionnez les mêmes fichiers pour reprendre — les fichiers déjà envoyés seront automatiquement ignorés.
+            </span>
+            <button
+              type="button"
+              onClick={() => { clearLastBatch(); setResumeBanner(null) }}
+              className="text-blue-500 hover:text-blue-700 dark:hover:text-blue-300 shrink-0 cursor-pointer"
+              title="Ignorer"
+            >
+              <XIcon className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
 
@@ -909,11 +1064,11 @@ export default function ExtractionHub({
             {creditsModal?.available > 0 && (
               <AlertDialogAction
                 onClick={() => {
-                  const { files, available, isFolder } = creditsModal
+                  const { files, available, isFolder, batchId, total, alreadyDoneCount } = creditsModal
                   const truncated = files.slice(0, available)
                   setCreditsModal(null)
-                  if (isFolder) runFolderUpload(truncated)
-                  else uploadSequential(truncated)
+                  if (isFolder) runFolderUpload(truncated, batchId, total, alreadyDoneCount)
+                  else uploadWithPool(truncated, () => null, batchId, total, alreadyDoneCount)
                 }}
               >
                 Uploader les {creditsModal?.available} premiers

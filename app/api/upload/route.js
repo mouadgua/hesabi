@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import prisma from '@/lib/prisma'
-import { validateFileBytes } from '@/lib/sanitize'
+import { validateFileBytes, validateFileIntegrity } from '@/lib/sanitize'
 import { classifyAndDetect } from '@/lib/classify'
 
 const CLASSIFY_TIMEOUT_MS = 8000
@@ -65,6 +65,13 @@ export async function POST(request) {
   const bytesCheck = validateFileBytes(file.type, base64)
   if (!bytesCheck.valid) {
     return NextResponse.json({ error: bytesCheck.error }, { status: 400 })
+  }
+
+  // ── File integrity check — empty file / truncated PDF (defense in depth,
+  // primary check happens client-side before the file is even sent) ────────
+  const integrityCheck = validateFileIntegrity(file.type, bytes)
+  if (!integrityCheck.valid) {
+    return NextResponse.json({ error: integrityCheck.error }, { status: 400 })
   }
 
   // ── Content hash — used for duplicate detection within the cabinet ────────

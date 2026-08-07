@@ -35,6 +35,16 @@
 - Onboarding guidé post-inscription (`/onboarding`)
 - Middleware d'authentification edge (`middleware.js`) — protège `/dashboard/**` et `/api/admin/**`
 
+### Upload
+- Upload résilient par lots avec reprise + pré-validation renforcée : terminé
+  - Concurrence bornée (`POOL_SIZE = 12`) au lieu d'un envoi strictement séquentielle — même vitesse (voire plus rapide) sur les petits lots (1-5 fichiers), pas de régression
+  - Chaque fichier confirmé individuellement en base dès son upload réussi (déjà en place, préservé) — un échec n'affecte pas les autres
+  - Reprise : empreinte `nom_taille_dateModif` par fichier persistée en `localStorage` (`hesabi_upload_progress`, plafonné à 3000 entrées, expiration 48h) — un fichier déjà uploadé est automatiquement ignoré si le même lot est re-sélectionné après une coupure
+  - Bannière de reprise affichée si un lot précédent a été interrompu ("X/Y fichiers envoyés — re-sélectionnez les mêmes fichiers")
+  - Pré-validation renforcée côté client (`lib/clientValidation.js`) avant l'upload : fichier vide, signature magic bytes, PDF tronqué (heuristique `%%EOF`), dimensions d'image aberrantes (0×0 ou > 12000px) — rejeté avant d'entrer dans la file d'extraction, pas après avoir attendu son tour
+  - Défense en profondeur côté serveur (`lib/sanitize.js` → `validateFileIntegrity`) : fichier vide + PDF tronqué revérifiés dans `/api/upload/route.js`
+  - Non inclus (hors scope) : validation des dimensions d'image côté serveur (nécessiterait une dépendance de décodage d'image type `sharp`)
+
 ### File manager
 - Upload multi-fichiers (PDF, JPG, PNG, WEBP, HEIC — max 20 Mo)
 - Validation magic bytes côté serveur (anti-spoofing)
@@ -283,7 +293,8 @@ lib/
 ├── ai.js                    Pipeline IA (Gemini + OpenRouter + circuit breaker + cache)
 ├── prisma.js                Singleton Prisma
 ├── rateLimiter.js           Rate limiter démo (in-memory — à migrer Redis)
-├── sanitize.js              Validation inputs (email, MIME, magic bytes)
+├── sanitize.js              Validation inputs (email, MIME, magic bytes, intégrité fichier)
+├── clientValidation.js      ✅ Validation navigateur avant upload (magic bytes, PDF EOF, dimensions image)
 └── admin-auth.js            Guard admin + logAdminAction
 
 utils/

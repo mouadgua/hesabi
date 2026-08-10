@@ -326,30 +326,46 @@ export async function createManualTemplateAction(formData) {
     if (!user) throw new Error("Non autorisé")
 
     const nomModele = formData.get('nom_modele')
-    const cabinetId = formData.get('cabinet_id')
-    const structureJsonString = formData.get('structure_json')
+    const tagsJson  = formData.get('tags')
 
-    if (!nomModele || !cabinetId || !structureJsonString) {
+    if (!nomModele || !tagsJson) {
         throw new Error("Données manquantes pour la création du modèle.")
     }
 
+    let tags
     try {
-        // On transforme la chaîne JSON du formulaire en véritable objet JSON pour Prisma
-        const structureJson = JSON.parse(structureJsonString)
+        tags = JSON.parse(tagsJson)
+    } catch {
+        throw new Error("Format des champs invalide.")
+    }
+    if (!Array.isArray(tags) || tags.length === 0) throw new Error("Aucun champ défini.")
 
-        // Création du modèle dans la base de données
+    // cabinet_id is resolved from the session, never read from the form —
+    // a client-supplied value would let anyone write into another cabinet.
+    const utilisateur = await prisma.utilisateur.findUnique({
+        where:  { id: user.id },
+        select: { cabinet_id: true },
+    })
+    if (!utilisateur?.cabinet_id) throw new Error("Cabinet introuvable.")
+
+    // Same key normalisation as createTemplateFromColumnsAction
+    const structureJson = Object.fromEntries(tags.map(tag => {
+        const label = String(tag)
+        const key   = label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '')
+        return [key || label, null]
+    }))
+
+    try {
         await prisma.templateExtraction.create({
             data: {
-                nom_modele: nomModele,
-                cabinet_id: cabinetId,
-                structure_json: structureJson
+                nom_modele:     nomModele,
+                cabinet_id:     utilisateur.cabinet_id,
+                structure_json: structureJson,
             }
         })
 
-        // Rafraîchir la page des modèles pour voir le nouveau modèle apparaître
         revalidatePath('/dashboard/models')
-        revalidatePath('/dashboard') // Au cas où tu l'affiches aussi sur l'accueil
-        
+        revalidatePath('/dashboard')
     } catch (error) {
         console.error("Erreur lors de la création du modèle manuel :", error)
         throw new Error("Impossible de créer le modèle.")

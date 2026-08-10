@@ -42,10 +42,11 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
   · Fichier : `app/dashboard/actions.js:404-442`
   · Sévérité : **bloquant** · Effort : **15 min**
 
-- [ ] **S2 — IDOR : écriture de modèle dans un cabinet arbitraire**
-  `createManualTemplateAction` lit `cabinet_id` depuis le `formData` client et l'utilise tel quel (`:329` → `:344`), sans vérifier qu'il correspond au cabinet de l'appelant.
-  · Fichier : `app/dashboard/actions.js:323-357`
-  · Sévérité : **bloquant** · Effort : **10 min**
+- [x] ~~**S2 — IDOR : écriture de modèle dans un cabinet arbitraire**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-idor-create-template`)
+  `cabinet_id` est désormais résolu depuis la session (`user.id` → `Utilisateur.cabinet_id`) et **n'est plus jamais lu depuis le formulaire**, aligné sur `createTemplateFromColumnsAction` qui appliquait déjà le bon pattern.
+  **Découverte pendant le correctif** : l'action était en réalité **cassée en production**. Le formulaire (`ManualCreator.jsx`) envoie `nom_modele` + `tags`, alors que l'action exigeait `cabinet_id` + `structure_json` — jamais envoyés. Elle levait donc systématiquement « Données manquantes », et la « Création Manuelle » ne fonctionnait pour personne. L'IDOR restait néanmoins exploitable en appelant la Server Action directement avec un `cabinet_id` forgé.
+  Le correctif traite les deux : lecture de `tags`, normalisation des clés en snake_case (même logique que l'action voisine), `cabinet_id` côté serveur.
+  **Vérifié sur l'app réelle** : création de modèle OK (2/2), persistance après rechargement, et contrôle en base — `cabinet_id` du modèle = celui de la session. `structure_json` générée correctement (`{"montant_ht":null,"date_de_facture":null}`). Modèle de test supprimé.
 
 - [ ] **S3 — IDOR + vol de crédits via `uploadToDriveAction`**
   `client_id` vient du formulaire, `prisma.client.findUnique({ where: { id: clientId } })` ne vérifie pas l'appartenance au cabinet. Conséquence : décrément des crédits **du cabinet victime** et dépôt de documents chez lui. Action non utilisée par l'UI actuelle mais **exportée, donc invocable directement** (les Server Actions sont adressables par ID).
@@ -227,7 +228,7 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 |---|---|---|---|---|
 | ~~1~~ | ~~T2~~ | ~~Script `npm test`~~ | ~~2 min~~ | **✅ Fait 2026-08-10** |
 | ~~2~~ | ~~S4~~ | ~~Fail-open du cron~~ | ~~10 min~~ | **✅ Fait 2026-08-10** |
-| 3 | S2 | IDOR création de modèle | 10 min | ✅ |
+| ~~3~~ | ~~S2~~ | ~~IDOR création de modèle~~ | ~~10 min~~ | **✅ Fait 2026-08-10** |
 | 4 | S1 | IDOR modification/suppression de modèle | 15 min | ✅ |
 | 5 | S3 | IDOR + crédits `uploadToDriveAction` | 15 min | ✅ |
 | 6 | F4 | 4 index manquants + procédure de migration | 30 min | ✅ |

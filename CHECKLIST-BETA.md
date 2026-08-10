@@ -137,12 +137,15 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
   Aucune trace de stratégie de sauvegarde dans le dépôt. Neon et Supabase font des snapshots par défaut selon le plan, mais **la rétention n'est pas documentée et aucune restauration n'a jamais été testée**. `checkliste_requirements.md` liste explicitement « Test de restauration effectué et documenté (pas juste supposé fonctionner) ».
   · Sévérité : **bloquant (à vérifier)** · Effort : **1-2 h** · **[OUTIL EXTERNE REQUIS : consoles Neon + Supabase]**
 
-- [ ] **F4 — Index de performance manquants + migrations sans historique**
-  ✅ Vérifié : **toutes les colonnes attendues existent** en production, les uploads ne sont donc pas cassés.
-  ⚠️ Reste : **4 index de `add_missing_indexes.sql` ne sont pas appliqués** — `Client_cabinet_id_idx`, `Document_template_id_idx`, `Document_dossier_id_idx`, `Dossier_client_id_idx`. Ils portent sur les colonnes de jointure utilisées par **toutes** les requêtes filtrées par cabinet : impact direct sur les temps de réponse à mesure que les données grossissent.
-  ⚠️ Reste : pas de `prisma/migrations/`, 6 fichiers `.sql` appliqués manuellement, aucun moyen de savoir quel environnement est à jour.
-  · Fichiers : `prisma/add_missing_indexes.sql`, `prisma/*.sql`
-  · Sévérité : **bloquant** · Effort : **30 min**
+- [x] ~~**F4 — Index de performance manquants + migrations sans historique**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-db-indexes`)
+  **8 index appliqués en production** avec `CREATE INDEX CONCURRENTLY` (aucun verrou de table, écritures non interrompues), tous vérifiés `indisvalid AND indisready` :
+  · 4 clés étrangères : `Client_cabinet_id_idx`, `Document_template_id_idx`, `Document_dossier_id_idx`, `Dossier_client_id_idx`
+  · 4 composites que l'audit initial avait manqués, révélés par le nouveau script : `Document(client_id, statut)`, `Document(statut, updatedAt)`, `FieldCorrection(user_id, document_type)`, `AdminLog(createdAt DESC)`
+  **Impact mesuré** — `EXPLAIN ANALYZE` sur la requête principale du dashboard (documents d'un cabinet par statut) : `Index Scan using Document_client_id_statut_idx`, exécution **0,079 ms**. Le `Seq Scan` restant sur `Client` est correct (11 lignes — Postgres préfère à raison le scan séquentiel).
+  **`npm run db:check` ajouté** (`scripts/db-check.mjs`) : compare schéma attendu et base réelle sur trois axes — colonnes, index (avec validité), et **fraîcheur du client Prisma généré**. Sortie 1 en cas d'écart, donc utilisable comme garde-fou de CI.
+  C'est précisément l'outil qui aurait évité la panne d'uploads du jour : il détecte à la fois une colonne absente en base et un client généré périmé, deux choses que `next build` ne voit pas.
+  `prisma/add_missing_indexes.sql` réécrit pour refléter les 8 index et documenter la contrainte `CONCURRENTLY` (pas de transaction).
+  **Reste hors périmètre** : la bascule vers `prisma migrate` avec historique versionné — opération à risque sur une base de production existante, à décider séparément.
 
 ---
 
@@ -247,7 +250,7 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 | ~~3~~ | ~~S2~~ | ~~IDOR création de modèle~~ | ~~10 min~~ | **✅ Fait 2026-08-10** |
 | ~~4~~ | ~~S1~~ | ~~IDOR modification/suppression de modèle~~ | ~~15 min~~ | **✅ Fait 2026-08-10** |
 | ~~5~~ | ~~S3~~ | ~~IDOR + crédits `uploadToDriveAction`~~ | ~~15 min~~ | **✅ Fait 2026-08-10** |
-| 6 | F4 | 4 index manquants + procédure de migration | 30 min | ✅ |
+| ~~6~~ | ~~F4~~ | ~~Index manquants + procédure de migration~~ | ~~30 min~~ | **✅ Fait 2026-08-10** |
 | 7 | T3 | Pipeline CI | 45 min | ✅ |
 | 8 | F1+F2 | Validation des variables d'env au démarrage | 45 min | ✅ |
 | 9 | S5 | Rate limiting sur l'authentification | 1 h | ✅ (Upstash dispo) |

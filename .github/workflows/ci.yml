@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Une seule exécution par branche : un nouveau push annule la précédente.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Lint · Tests · Build
+    runs-on: ubuntu-latest
+
+    env:
+      # Valeurs factices : `next build` évalue certains modules au chargement
+      # (createServiceClient lève "supabaseUrl is required" sans elles).
+      # Aucune connexion réseau n'est établie pendant le build.
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+      SUPABASE_SERVICE_ROLE_KEY: placeholder-service-key
+      DATABASE_URL: postgresql://user:pass@localhost:5432/placeholder
+      DIRECT_URL: postgresql://user:pass@localhost:5432/placeholder
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      # Sans cette étape, un schema.prisma modifié laisse un client périmé :
+      # le build passe et l'application échoue à l'exécution.
+      - name: Générer le client Prisma
+        run: npx prisma generate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests unitaires
+        run: npm test
+
+      - name: Build de production
+        run: npm run build
+
+  coverage:
+    name: Couverture (informatif)
+    runs-on: ubuntu-latest
+    # Le seuil de 70 % n'est pas atteint aujourd'hui (~45 %). Ce job publie
+    # le chiffre sans bloquer la fusion — à repasser en bloquant une fois le
+    # seuil tenu (checklist T1/T4).
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Couverture
+        run: npm run test:coverage

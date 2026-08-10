@@ -52,10 +52,17 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
   · Fichier : `app/dashboard/actions.js:12-71`
   · Sévérité : **bloquant** · Effort : **15 min** (ou suppression pure si code mort confirmé)
 
-- [ ] **S4 — Cron `recovery` en fail-open**
-  `if (workerSecret) { …vérifier… }` : si `WORKER_SECRET` est absent de l'environnement, **toute la vérification est sautée** et la route devient publique. Elle peut alors passer en masse tous les documents `EN_COURS_IA` en `REJETE`. Incohérent avec `worker-extraction` qui, lui, refuse explicitement en production.
-  · Fichier : `app/api/cron/recovery/route.js:11-21`
-  · Sévérité : **bloquant** · Effort : **10 min**
+- [x] ~~**S4 — Cron `recovery` en fail-open**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-cron-failopen`)
+  Le garde-fou échoue désormais **en fermeture**, aligné sur `worker-extraction` : secret absent en production → **503**, la route refuse de s'exécuter et journalise la raison. En développement, un avertissement explicite remplace le silence. Les deux en-têtes restent acceptés (`Authorization: Bearer` pour le cron Vercel, `x-worker-secret` pour les appels manuels).
+  **Vérifié sur build de production réel** (`next start`, port 3100) :
+  | Cas | Avant | Après |
+  |---|---|---|
+  | Prod, secret absent, sans header | *200 — exécutait* | **503** `Cron non configuré` |
+  | Prod, secret absent, header quelconque | *200 — exécutait* | **503** |
+  | Prod, secret présent, `Bearer` valide | 200 | **200** (non-régression) |
+  | Prod, secret présent, `x-worker-secret` valide | 200 | **200** (non-régression) |
+  | Prod, secret présent, secret faux | 401 | **401** |
+  Test effectué à vide (0 document `EN_COURS_IA` de +10 min) — aucune donnée modifiée.
 
 - [ ] **S5 — Aucun rate limiting sur l'authentification**
   `login`, `registerUser`, `sendResetEmail` et `/api/contact` n'ont **aucune limitation**. Brute-force sur les mots de passe, énumération de comptes, spam du formulaire de contact. Le seul rate limiter existant ne couvre que `/demo`.
@@ -216,12 +223,10 @@ S1, S2, S3, S4, S5, S7, S8, S9 · T1, T2, T3, T4, T5 · A4 · F1, F2, F4, F5
 
 Trié par sévérité, puis par effort croissant — les gains rapides et bloquants d'abord.
 
-| # | Réf | Point | Effort | Dépendance |
-|---|---|---|---|---|
 | # | Réf | Point | Effort | Prêt ? |
 |---|---|---|---|---|
 | ~~1~~ | ~~T2~~ | ~~Script `npm test`~~ | ~~2 min~~ | **✅ Fait 2026-08-10** |
-| 2 | S4 | Fail-open du cron | 10 min | ✅ |
+| ~~2~~ | ~~S4~~ | ~~Fail-open du cron~~ | ~~10 min~~ | **✅ Fait 2026-08-10** |
 | 3 | S2 | IDOR création de modèle | 10 min | ✅ |
 | 4 | S1 | IDOR modification/suppression de modèle | 15 min | ✅ |
 | 5 | S3 | IDOR + crédits `uploadToDriveAction` | 15 min | ✅ |

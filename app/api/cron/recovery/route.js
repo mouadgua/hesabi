@@ -7,16 +7,23 @@ import prisma from '@/lib/prisma'
 export const maxDuration = 30
 
 export async function GET(request) {
-  // Same secret used by worker-extraction — reuse existing env var
+  // Same secret used by worker-extraction — reuse existing env var.
+  // A missing secret must never mean "no check": this route can flip every
+  // in-flight document to REJETE, so it refuses to run rather than run open.
   const workerSecret = process.env.WORKER_SECRET
-  if (workerSecret) {
-    const authHeader = request.headers.get('authorization')
-    if (authHeader !== `Bearer ${workerSecret}`) {
-      // Also accept the Vercel-Cron-Authorization header (Vercel sets it automatically)
-      const cronHeader = request.headers.get('x-worker-secret')
-      if (cronHeader !== workerSecret) {
-        return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
-      }
+  if (!workerSecret) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error('[cron/recovery] WORKER_SECRET not set — refusing all requests in production')
+      return NextResponse.json({ error: 'Cron non configuré' }, { status: 503 })
+    }
+    console.warn('[cron/recovery] WORKER_SECRET not set — unauthenticated access allowed in dev only')
+  } else {
+    // Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`; manual calls may
+    // use `x-worker-secret` instead.
+    const bearer = request.headers.get('authorization')
+    const custom = request.headers.get('x-worker-secret')
+    if (bearer !== `Bearer ${workerSecret}` && custom !== workerSecret) {
+      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
     }
   }
 

@@ -4,9 +4,20 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import prisma from '@/lib/prisma'
+import { headers } from 'next/headers'
 import { sanitizeName, sanitizeEmail, validatePassword, sanitizeBetaKey } from '@/lib/sanitize'
+import { checkAuthRateLimit, clientIp, formatRetryDelay } from '@/lib/authRateLimit'
 
 export async function registerUser(formData) {
+  // Limité par IP : sans cela, une clé bêta volée permet d'énumérer les
+  // adresses déjà inscrites en boucle via les messages d'erreur.
+  const rl = await checkAuthRateLimit('register', `ip:${clientIp(await headers())}`)
+  if (!rl.allowed) {
+    redirect('/register?error=' + encodeURIComponent(
+      `Trop de tentatives d'inscription. Réessayez dans ${formatRetryDelay(rl.retryAfterSec)}.`
+    ))
+  }
+
   const nom      = sanitizeName(formData.get('nom') ?? '')
   const email    = sanitizeEmail(formData.get('email') ?? '')
   const password = formData.get('password') ?? ''

@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { headers } from 'next/headers'
 import { sanitizeEmail, validatePassword } from '@/lib/sanitize'
+import { checkAuthRateLimit, resetAuthRateLimit, clientIp, formatRetryDelay } from '@/lib/authRateLimit'
 
 export async function login(formData) {
   const supabase = await createClient()
@@ -20,6 +21,24 @@ export async function login(formData) {
   const pwCheck = validatePassword(password)
   if (!pwCheck.valid) {
     return redirect('/login?message=' + encodeURIComponent(pwCheck.message))
+  }
+
+  // Budget serré par compte (c'est lui qui arrête le brute force) et large
+  // par IP (un cabinet entier partage une seule IP de bureau : le verrouiller
+  // sur quelques fautes de frappe d'un employé serait un déni de service).
+  const ip = clientIp(await headers())
+  const checks = [
+    ['login',   `email:${email}`],
+    ['loginIp', `ip:${ip}`],
+  ]
+  for (const [action, id] of checks) {
+    const rl = await checkAuthRateLimit(action, id)
+    if (!rl.allowed) {
+      console.warn(`[login] Rate limit atteint (${action} ${id})`)
+      return redirect('/login?message=' + encodeURIComponent(
+        `Trop de tentatives de connexion. Réessayez dans ${formatRetryDelay(rl.retryAfterSec)}.`
+      ))
+    }
   }
 
   const { error } = await supabase.auth.signInWithPassword({
@@ -41,6 +60,14 @@ export async function login(formData) {
     }
     return redirect('/login?message=' + encodeURIComponent(msg))
   }
+
+  // Connexion réussie : on efface les compteurs, seuls les échecs doivent
+  // s'accumuler. Sans cela, deux fautes de frappe suivies d'une réussite
+  // continueraient de consommer le budget pendant tout le reste de la fenêtre.
+  await Promise.all([
+    resetAuthRateLimit('login',   `email:${email}`),
+    resetAuthRateLimit('loginIp', `ip:${ip}`),
+  ])
 
   revalidatePath('/dashboard')
   redirect('/dashboard')

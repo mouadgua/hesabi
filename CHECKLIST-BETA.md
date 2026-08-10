@@ -81,10 +81,13 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
   | Prod, secret présent, secret faux | 401 | **401** |
   Test effectué à vide (0 document `EN_COURS_IA` de +10 min) — aucune donnée modifiée.
 
-- [ ] **S5 — Aucun rate limiting sur l'authentification**
-  `login`, `registerUser`, `sendResetEmail` et `/api/contact` n'ont **aucune limitation**. Brute-force sur les mots de passe, énumération de comptes, spam du formulaire de contact. Le seul rate limiter existant ne couvre que `/demo`.
-  · Fichiers : `app/login/actions.js`, `app/register/actions.js`, `app/forgot-password/actions.js`, `app/api/contact/route.js`
-  · Sévérité : **bloquant** · Effort : **1 h** (in-memory) — voir S10 pour la version distribuée
+- [x] ~~**S5 — Aucun rate limiting sur l'authentification**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-auth-ratelimit`)
+  `lib/authRateLimit.js` — compteurs **distribués via Upstash Redis** (INCR + EXPIRE en REST, sans SDK supplémentaire), donc partagés entre instances Vercel. Repli mémoire si Redis est absent (dev, CI) ou en panne.
+  Couvre `login`, `registerUser`, `sendResetEmail` et `/api/contact` — ce dernier avait déjà un compteur, mais **en mémoire** : il suffisait de retomber sur une autre instance pour repartir de zéro (mon audit initial le comptait à tort comme absent).
+  **Défaut de conception corrigé grâce au test** : ma première version limitait à 10 tentatives par IP. Or un cabinet comptable sort par **une seule IP de bureau** — quelques fautes de frappe d'un employé auraient verrouillé toute la structure. Les budgets sont donc dissociés : **serré par compte** (10 / 15 min — c'est lui qui arrête le brute force), **large par IP** (60 / 15 min — n'attrape qu'un balayage massif). Une connexion réussie **efface les compteurs**, seuls les échecs s'accumulent.
+  **Choix assumé : fail open.** Une panne Redis ne doit pas verrouiller les utilisateurs hors de leur compte ; l'incident est journalisé et la fenêtre de risque bornée. C'est l'inverse du cron (S4, fail closed), parce que le mode de défaillance y est la mutation massive de données, ici un déni de service à des clients légitimes.
+  **Vérifié contre Upstash réel** : compteur persisté et relu entre processus. **Vérifié sur l'app** : brute-force bloqué à la 11ᵉ tentative, utilisateur légitime de la **même IP** connecté sans entrave, compte attaqué toujours protégé.
+  10 tests unitaires ajoutés (`__tests__/lib/authRateLimit.test.js`) — total **70**.
 
 - [x] ~~**S6 — Confidentialité du bucket Supabase `documents`**~~ — **✅ LEVÉ le 2026-08-10**
   Vérifié via l'API Storage : `public=false`. Trois tentatives d'accès anonyme (URL publique, chemin authentifié, clé anon seule) renvoient toutes HTTP 400, sans divulguer l'existence de l'objet. La lecture légitime passe bien par `createSignedUrl` (1 h).
@@ -257,7 +260,7 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 | ~~6~~ | ~~F4~~ | ~~Index manquants + procédure de migration~~ | ~~30 min~~ | **✅ Fait 2026-08-10** |
 | ~~7~~ | ~~T3~~ | ~~Pipeline CI~~ | ~~45 min~~ | **✅ Fait 2026-08-10** |
 | ~~8~~ | ~~F1+F2~~ | ~~Validation des variables d'env au démarrage~~ | ~~45 min~~ | **✅ Fait 2026-08-10** |
-| 9 | S5 | Rate limiting sur l'authentification | 1 h | ✅ (Upstash dispo) |
+| ~~9~~ | ~~S5~~ | ~~Rate limiting sur l'authentification~~ | ~~1 h~~ | **✅ Fait 2026-08-10** |
 | ~~10~~ | ~~A1~~ | ~~Sentry opérationnel~~ | ~~1 h~~ | **✅ Fait 2026-08-10** |
 | 11 | A2 | Alertes pipeline d'extraction | 2-3 h | ❌ dépend de A1 |
 | 12 | A3 | Sonde de disponibilité | 20 min | ⏳ à confirmer |

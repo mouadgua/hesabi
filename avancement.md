@@ -153,6 +153,7 @@
 
 ### Modèles d'extraction (Templates)
 - Création manuelle d'un template (champs en snake_case)
+  - **Corrigé le 2026-08-10** : l'action attendait `cabinet_id` + `structure_json`, que le formulaire n'envoyait pas (il envoie `nom_modele` + `tags`) — la création manuelle échouait donc systématiquement. Elle lit désormais `tags` et résout `cabinet_id` **depuis la session**, jamais depuis le formulaire (faille IDOR : un `cabinet_id` forgé permettait d'écrire un modèle dans le cabinet d'autrui).
 - Création via IA à partir d'une image de document
 - Import depuis colonnes Excel (feature learning loop)
 - Modification et suppression de templates

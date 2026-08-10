@@ -23,9 +23,10 @@ export default async function PlanComptablePage() {
   let migrationPending = false
   let errorDetail = null
   try {
+    // Inactive comptes are included on purpose — the client-side
+    // "Afficher inactifs" toggle needs them to have something to reveal.
     comptes = await prisma.compteComptable.findMany({
       where: {
-        actif: true,
         OR: [{ cabinet_id }, { is_standard: true }],
       },
       orderBy: [{ is_standard: 'asc' }, { code: 'asc' }],

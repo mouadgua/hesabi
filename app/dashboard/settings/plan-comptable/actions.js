@@ -29,17 +29,22 @@ export async function createCompteAction(formData) {
     return { error: 'Champs invalides' }
   }
 
-  // Prevent duplicate code within this cabinet
-  const existing = await prisma.compteComptable.findFirst({
-    where: { cabinet_id, code },
+  // Single round trip: reject both a duplicate inside this cabinet and a
+  // collision with the shared CGNC standard plan.
+  const conflict = await prisma.compteComptable.findFirst({
+    where: {
+      code,
+      OR: [{ cabinet_id }, { is_standard: true }],
+    },
+    select: { is_standard: true },
   })
-  if (existing) return { error: `Le code ${code} existe déjà dans votre plan` }
-
-  // Reject code collision with CGNC standards
-  const cgnc = await prisma.compteComptable.findFirst({
-    where: { code, is_standard: true },
-  })
-  if (cgnc) return { error: `Le code ${code} est déjà utilisé dans le plan CGNC standard` }
+  if (conflict) {
+    return {
+      error: conflict.is_standard
+        ? `Le code ${code} est déjà utilisé dans le plan CGNC standard`
+        : `Le code ${code} existe déjà dans votre plan`,
+    }
+  }
 
   await prisma.compteComptable.create({
     data: {
@@ -95,4 +100,108 @@ export async function toggleActifAction(id, actif) {
 
   revalidatePath('/dashboard/settings/plan-comptable')
   return { success: true }
+}
+
+/**
+ * Bulk activate / deactivate. Only ever touches this cabinet's own comptes —
+ * shared CGNC standards are never modifiable.
+ */
+export async function setActifBulkAction(ids, actif) {
+  const cabinet_id = await getCabinetId()
+  if (!Array.isArray(ids) || ids.length === 0) return { error: 'Aucun compte sélectionné' }
+
+  const { count } = await prisma.compteComptable.updateMany({
+    where: { id: { in: ids }, cabinet_id, is_standard: false },
+    data:  { actif },
+  })
+
+  revalidatePath('/dashboard/settings/plan-comptable')
+  return { success: true, count }
+}
+
+/**
+ * Dry run for the delete confirmation dialog: reports which comptes can be
+ * deleted and which are blocked, without mutating anything.
+ * A compte is blocked when at least one VALIDE document is assigned to it —
+ * removing it would strip the account from an already-closed entry.
+ */
+export async function inspectDeleteAction(ids) {
+  const cabinet_id = await getCabinetId()
+  if (!Array.isArray(ids) || ids.length === 0) return { deletable: [], blocked: [] }
+
+  const comptes = await prisma.compteComptable.findMany({
+    where:  { id: { in: ids }, cabinet_id, is_standard: false },
+    select: { id: true, code: true, libelle: true },
+  })
+  if (comptes.length === 0) return { deletable: [], blocked: [] }
+
+  const ownedIds = comptes.map(c => c.id)
+
+  // Assignments grouped by compte, split on whether the document is closed.
+  const links = await prisma.documentCompteComptable.findMany({
+    where:  { compte_id: { in: ownedIds } },
+    select: { compte_id: true, document: { select: { statut: true } } },
+  })
+
+  const valideCount = new Map()
+  const detachCount = new Map()
+  for (const l of links) {
+    const map = l.document?.statut === 'VALIDE' ? valideCount : detachCount
+    map.set(l.compte_id, (map.get(l.compte_id) ?? 0) + 1)
+  }
+
+  const deletable = []
+  const blocked   = []
+  for (const c of comptes) {
+    const nbValide = valideCount.get(c.id) ?? 0
+    if (nbValide > 0) {
+      blocked.push({ ...c, documentsValides: nbValide })
+    } else {
+      deletable.push({ ...c, documentsADetacher: detachCount.get(c.id) ?? 0 })
+    }
+  }
+  return { deletable, blocked }
+}
+
+/**
+ * Permanently delete cabinet comptes.
+ * Refuses any compte assigned to a VALIDE document; for the rest, detaches
+ * the pending assignments and drops the learned suggestion preferences first,
+ * all in one transaction so a partial delete can't leave dangling rows.
+ */
+export async function deleteComptesAction(ids) {
+  const cabinet_id = await getCabinetId()
+  if (!Array.isArray(ids) || ids.length === 0) return { error: 'Aucun compte sélectionné' }
+
+  const comptes = await prisma.compteComptable.findMany({
+    where:  { id: { in: ids }, cabinet_id, is_standard: false },
+    select: { id: true, code: true },
+  })
+  if (comptes.length === 0) return { error: 'Aucun compte supprimable dans la sélection' }
+
+  const ownedIds = comptes.map(c => c.id)
+
+  const lockedLinks = await prisma.documentCompteComptable.findMany({
+    where:  { compte_id: { in: ownedIds }, document: { statut: 'VALIDE' } },
+    select: { compte_id: true },
+  })
+  const lockedIds = new Set(lockedLinks.map(l => l.compte_id))
+
+  const toDelete = ownedIds.filter(id => !lockedIds.has(id))
+  if (toDelete.length === 0) {
+    return { error: 'Ces comptes sont utilisés par des écritures validées et ne peuvent pas être supprimés.' }
+  }
+
+  await prisma.$transaction([
+    prisma.documentCompteComptable.deleteMany({ where: { compte_id: { in: toDelete } } }),
+    prisma.cabinetAccountPreference.deleteMany({ where: { compte_id: { in: toDelete } } }),
+    prisma.compteComptable.deleteMany({ where: { id: { in: toDelete }, cabinet_id, is_standard: false } }),
+  ])
+
+  revalidatePath('/dashboard/settings/plan-comptable')
+  return {
+    success:      true,
+    deletedCount: toDelete.length,
+    blockedCount: lockedIds.size,
+  }
 }

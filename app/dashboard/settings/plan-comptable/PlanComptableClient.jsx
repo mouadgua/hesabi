@@ -1,6 +1,7 @@
 "use client"
 
-import { useState, useTransition, useMemo } from "react"
+import { useState, useTransition, useMemo, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Input }    from "@/components/ui/input"
 import { Button }   from "@/components/ui/button"
 import { Badge }    from "@/components/ui/badge"
@@ -13,11 +14,14 @@ import {
 } from "@/components/ui/select"
 import {
   PlusIcon, PencilIcon, SearchIcon, CheckIcon, XIcon,
-  ChevronLeftIcon, ChevronRightIcon,
+  ChevronLeftIcon, ChevronRightIcon, Trash2Icon, AlertTriangleIcon,
 } from "lucide-react"
 
 const PAGE_SIZE = 50
-import { createCompteAction, updateCompteAction, toggleActifAction } from "./actions"
+import {
+  createCompteAction, updateCompteAction, toggleActifAction,
+  setActifBulkAction, deleteComptesAction, inspectDeleteAction,
+} from "./actions"
 
 const CLASSES = [1, 2, 3, 4, 5, 6, 7, 8]
 
@@ -33,6 +37,7 @@ const CLASS_LABELS = {
 }
 
 export default function PlanComptableClient({ comptes, cabinetId }) {
+  const router = useRouter()
   const [search,     setSearch]     = useState('')
   const [classeFilter, setClasseFilter] = useState('all')
   const [showInactif, setShowInactif] = useState(false)
@@ -41,6 +46,11 @@ export default function PlanComptableClient({ comptes, cabinetId }) {
   const [error,      setError]      = useState('')
   const [page,       setPage]       = useState(1)
   const [isPending,  startTransition] = useTransition()
+
+  // Multi-select + delete confirmation
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [deletePreview, setDeletePreview] = useState(null) // { deletable, blocked, loading }
+  const [bulkError, setBulkError] = useState('')
 
   // Form state for add/edit dialog
   const [form, setForm] = useState({ code: '', libelle: '', classe: '1' })
@@ -63,7 +73,7 @@ export default function PlanComptableClient({ comptes, cabinetId }) {
   const paginated  = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
   // Reset page when filters change
-  useMemo(() => { setPage(1) }, [search, classeFilter, showInactif]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setPage(1) }, [search, classeFilter, showInactif])
 
   function openAddDialog() {
     setForm({ code: '', libelle: '', classe: '1' })
@@ -86,6 +96,7 @@ export default function PlanComptableClient({ comptes, cabinetId }) {
       const res = await createCompteAction(fd)
       if (res?.error) { setError(res.error); return }
       setOpenAdd(false)
+      router.refresh()
     })
   }
 
@@ -98,12 +109,81 @@ export default function PlanComptableClient({ comptes, cabinetId }) {
       const res = await updateCompteAction(fd)
       if (res?.error) { setError(res.error); return }
       setEditTarget(null)
+      router.refresh()
     })
   }
 
   function handleToggle(compte) {
     startTransition(async () => {
       await toggleActifAction(compte.id, !compte.actif)
+      router.refresh()
+    })
+  }
+
+  // ── Multi-select ──────────────────────────────────────────────────────────
+  // Only cabinet-owned comptes are selectable — shared CGNC standards can
+  // never be modified or deleted.
+
+  const selectableOnPage = paginated.filter(c => !c.is_standard)
+  const allPageSelected  = selectableOnPage.length > 0 &&
+    selectableOnPage.every(c => selectedIds.has(c.id))
+
+  function toggleSelect(id) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAllOnPage() {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (allPageSelected) selectableOnPage.forEach(c => next.delete(c.id))
+      else                 selectableOnPage.forEach(c => next.add(c.id))
+      return next
+    })
+  }
+
+  function clearSelection() { setSelectedIds(new Set()) }
+
+  const selectedComptes = useMemo(
+    () => comptes.filter(c => selectedIds.has(c.id)),
+    [comptes, selectedIds]
+  )
+  const selectedActifCount   = selectedComptes.filter(c => c.actif).length
+  const selectedInactifCount = selectedComptes.length - selectedActifCount
+
+  function handleBulkSetActif(actif) {
+    setBulkError('')
+    startTransition(async () => {
+      const res = await setActifBulkAction([...selectedIds], actif)
+      if (res?.error) { setBulkError(res.error); return }
+      clearSelection()
+      router.refresh()
+    })
+  }
+
+  // Ask the server what would happen before showing the confirmation dialog,
+  // so the user sees exactly what gets deleted and what is refused.
+  function openDeleteDialog(ids) {
+    setBulkError('')
+    setDeletePreview({ loading: true, deletable: [], blocked: [], ids })
+    startTransition(async () => {
+      const res = await inspectDeleteAction(ids)
+      setDeletePreview({ loading: false, deletable: res.deletable ?? [], blocked: res.blocked ?? [], ids })
+    })
+  }
+
+  function confirmDelete() {
+    const ids = deletePreview?.deletable.map(c => c.id) ?? []
+    if (ids.length === 0) { setDeletePreview(null); return }
+    startTransition(async () => {
+      const res = await deleteComptesAction(ids)
+      setDeletePreview(null)
+      if (res?.error) { setBulkError(res.error); return }
+      clearSelection()
+      router.refresh()
     })
   }
 
@@ -229,24 +309,158 @@ export default function PlanComptableClient({ comptes, cabinetId }) {
         </DialogContent>
       </Dialog>
 
+      {/* Bulk action bar — only appears with a selection */}
+      {selectedIds.size > 0 && (
+        <div
+          role="toolbar"
+          aria-label="Actions groupées sur la sélection"
+          className="flex flex-wrap items-center gap-3 px-4 py-3 rounded-xl border border-[#1D9E75]/30 bg-[#E1F5EE]/60 dark:bg-[#1D9E75]/10 dark:border-[#1D9E75]/20"
+        >
+          <span className="text-sm font-medium text-[#085041] dark:text-[#1D9E75]">
+            {selectedIds.size} compte{selectedIds.size > 1 ? 's' : ''} sélectionné{selectedIds.size > 1 ? 's' : ''}
+          </span>
+
+          <div className="flex flex-wrap items-center gap-2 ml-auto">
+            {selectedActifCount > 0 && (
+              <Button
+                variant="outline" size="sm" disabled={isPending}
+                onClick={() => handleBulkSetActif(false)}
+              >
+                Désactiver{selectedInactifCount > 0 ? ` (${selectedActifCount})` : ''}
+              </Button>
+            )}
+            {selectedInactifCount > 0 && (
+              <Button
+                variant="outline" size="sm" disabled={isPending}
+                onClick={() => handleBulkSetActif(true)}
+              >
+                Réactiver{selectedActifCount > 0 ? ` (${selectedInactifCount})` : ''}
+              </Button>
+            )}
+            <Button
+              variant="outline" size="sm" disabled={isPending}
+              onClick={() => openDeleteDialog([...selectedIds])}
+              className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-500/30 dark:hover:bg-red-500/10"
+            >
+              <Trash2Icon className="w-3.5 h-3.5 mr-1.5" /> Supprimer
+            </Button>
+            <Button variant="ghost" size="sm" onClick={clearSelection} disabled={isPending}>
+              Annuler
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {bulkError && (
+        <div className="flex items-start gap-2 px-4 py-3 rounded-xl border border-red-200 dark:border-red-500/20 bg-red-50 dark:bg-red-500/10 text-sm text-red-700 dark:text-red-400">
+          <AlertTriangleIcon className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>{bulkError}</span>
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      <Dialog open={!!deletePreview} onOpenChange={v => !v && setDeletePreview(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Supprimer définitivement</DialogTitle>
+          </DialogHeader>
+
+          {deletePreview?.loading ? (
+            <p className="text-sm text-slate-500 py-4">Vérification des dépendances…</p>
+          ) : (
+            <div className="space-y-4 pt-1">
+              {deletePreview?.deletable.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium text-slate-700 dark:text-slate-200 mb-2">
+                    {deletePreview.deletable.length} compte{deletePreview.deletable.length > 1 ? 's' : ''} sera{deletePreview.deletable.length > 1 ? 'ont' : ''} supprimé{deletePreview.deletable.length > 1 ? 's' : ''} :
+                  </p>
+                  <ul className="max-h-40 overflow-y-auto space-y-1 text-xs text-slate-600 dark:text-slate-400">
+                    {deletePreview.deletable.map(c => (
+                      <li key={c.id} className="flex items-start gap-2">
+                        <span className="font-mono font-semibold shrink-0">{c.code}</span>
+                        <span className="truncate">{c.libelle}</span>
+                        {c.documentsADetacher > 0 && (
+                          <span className="ml-auto shrink-0 text-amber-600 dark:text-amber-400">
+                            {c.documentsADetacher} doc. détaché{c.documentsADetacher > 1 ? 's' : ''}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {deletePreview?.blocked.length > 0 && (
+                <div className="rounded-lg border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 p-3">
+                  <p className="text-xs font-medium text-amber-800 dark:text-amber-400 mb-2">
+                    {deletePreview.blocked.length} compte{deletePreview.blocked.length > 1 ? 's' : ''} conservé{deletePreview.blocked.length > 1 ? 's' : ''} — utilisé{deletePreview.blocked.length > 1 ? 's' : ''} par des écritures validées :
+                  </p>
+                  <ul className="space-y-1 text-xs text-amber-700 dark:text-amber-400/90">
+                    {deletePreview.blocked.map(c => (
+                      <li key={c.id} className="flex items-start gap-2">
+                        <span className="font-mono font-semibold shrink-0">{c.code}</span>
+                        <span className="ml-auto shrink-0">{c.documentsValides} doc. validé{c.documentsValides > 1 ? 's' : ''}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400/70 mt-2">
+                    Désactivez-les plutôt pour les retirer des suggestions sans toucher aux écritures.
+                  </p>
+                </div>
+              )}
+
+              {deletePreview?.deletable.length === 0 && deletePreview?.blocked.length === 0 && (
+                <p className="text-sm text-slate-500">Aucun compte supprimable dans cette sélection.</p>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <Button variant="outline" className="flex-1" onClick={() => setDeletePreview(null)} disabled={isPending}>
+                  Annuler
+                </Button>
+                {deletePreview?.deletable.length > 0 && (
+                  <Button
+                    className="flex-1 bg-red-600 hover:bg-red-700 text-white"
+                    onClick={confirmDelete}
+                    disabled={isPending}
+                  >
+                    {isPending ? 'Suppression…' : `Supprimer (${deletePreview.deletable.length})`}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* Table */}
       <div className="rounded-xl border border-slate-200/60 dark:border-white/[0.07] bg-white/70 dark:bg-white/[0.04] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200/60 dark:border-white/[0.07] bg-slate-50/80 dark:bg-white/[0.03]">
+                <th className="w-10 px-4 py-3">
+                  <input
+                    type="checkbox"
+                    checked={allPageSelected}
+                    onChange={toggleSelectAllOnPage}
+                    disabled={selectableOnPage.length === 0}
+                    title="Sélectionner les comptes cabinet de cette page"
+                    aria-label="Sélectionner les comptes cabinet de cette page"
+                    className="rounded border-gray-300 text-[#1D9E75] cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                  />
+                </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-28">Code</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Libellé</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-20">Classe</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-24">Type</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide w-20">Statut</th>
-                <th className="w-16" />
+                <th className="w-40" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-white/[0.04]">
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="text-center py-10 text-slate-400 text-sm">
+                  <td colSpan={7} className="text-center py-10 text-slate-400 text-sm">
                     Aucun compte trouvé
                   </td>
                 </tr>
@@ -256,8 +470,19 @@ export default function PlanComptableClient({ comptes, cabinetId }) {
                   key={compte.id}
                   className={`transition-colors hover:bg-slate-50/80 dark:hover:bg-white/[0.03] ${
                     !compte.actif ? 'opacity-50' : ''
-                  }`}
+                  } ${selectedIds.has(compte.id) ? 'bg-[#E1F5EE]/40 dark:bg-[#1D9E75]/5' : ''}`}
                 >
+                  <td className="px-4 py-3">
+                    {!compte.is_standard && (
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(compte.id)}
+                        onChange={() => toggleSelect(compte.id)}
+                        aria-label={`Sélectionner le compte ${compte.code}`}
+                        className="rounded border-gray-300 text-[#1D9E75] cursor-pointer"
+                      />
+                    )}
+                  </td>
                   <td className="px-4 py-3 font-mono font-semibold text-slate-700 dark:text-slate-200">
                     {compte.code}
                   </td>
@@ -310,6 +535,16 @@ export default function PlanComptableClient({ comptes, cabinetId }) {
                           disabled={isPending}
                         >
                           {compte.actif ? 'Désactiver' : 'Activer'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
+                          onClick={() => openDeleteDialog([compte.id])}
+                          disabled={isPending}
+                          title="Supprimer définitivement"
+                        >
+                          <Trash2Icon className="w-3.5 h-3.5" />
                         </Button>
                       </div>
                     )}

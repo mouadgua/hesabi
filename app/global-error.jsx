@@ -48,6 +48,9 @@ export default function GlobalError({ error, unstable_retry }) {
             >
               Réessayer
             </button>
+            {/* Rechargement complet volontaire : next/link passe par le routeur,
+                qui peut être lui-même en panne dans l'état où ce composant s'affiche. */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a
               href="/"
               style={{

@@ -12,10 +12,10 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
 | Bucket `documents` privé | ✅ **`public=false`** — accès anonyme refusé sur 3 vecteurs (URL publique, chemin authentifié, clé anon) → **S6 levé** |
 | Bucket `logos` | Public — normal, ce sont des logos affichés dans l'UI |
 | Colonnes attendues par le code | ✅ Toutes présentes (`file_hash`, `document_language_detected`, `extraction_method_used`, `extraction_cost_est`, `Cabinet.extraction_method`) → les uploads ne sont **pas** cassés |
-| Index de `add_missing_indexes.sql` | ⚠️ **4 manquants** : `Client_cabinet_id_idx`, `Document_template_id_idx`, `Document_dossier_id_idx`, `Dossier_client_id_idx` |
+| Index de `add_missing_indexes.sql` | ✅ **8 appliqués le 2026-08-10** (4 FK + 4 composites), tous valides — voir F4 |
 | Exposition PostgREST | ✅ **Aucun grant** `anon`/`authenticated` sur les tables → base inatteignable via l'API REST Supabase (RLS désactivé sur `Document`/`Client`/`Cabinet` n'est donc **pas** exploitable) |
 | Upstash Redis | ✅ `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` présents → **S10 débloqué** |
-| Sentry | ❌ **`SENTRY_DSN` absent du `.env`** → **A1 et A2 restent bloqués** |
+| Sentry | ✅ SDK installé et **DSN disponible** (`sentry.server.config.js`) → A1/A2 débloqués, reste le câblage |
 | k6 | ✅ Installé (v2.2.0) → **T6 débloqué** |
 | Variables absentes du `.env` local | `SENTRY_DSN`, `DEMO_ADMIN_SECRET`, `RESEND_API_KEY`, `IP_HASH_SALT`, `NEXT_PUBLIC_APP_URL` — à confirmer côté Vercel (voir F1) |
 
@@ -100,9 +100,14 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
   Ajout de `test` (`jest`), `test:watch` et `test:coverage` dans `package.json`.
   Vérifié : `npm test` → **60/60, exit 0**. `npm run test:coverage` → **exit 1**, seuil de 70 % non atteint (lignes 45,49 % / fonctions 38,63 %) — c'est le comportement voulu, la CI du point T3 s'appuiera dessus.
 
-- [ ] **T3 — Aucune CI**
-  Pas de `.github/workflows/`, pas de hook pre-commit. Rien n'exécute tests, lint ou build avant un déploiement.
-  · Sévérité : **bloquant** · Effort : **45 min**
+- [x] ~~**T3 — Aucune CI**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-ci`)
+  `.github/workflows/ci.yml` sur `push main` + toute pull request, avec annulation des exécutions obsolètes (`concurrency`).
+  Job **verify** (bloquant) : `npm ci` → **`prisma generate`** → `lint` → `test` → `build`. L'étape `prisma generate` est là délibérément : sans elle, un `schema.prisma` modifié laisse un client périmé, le build passe et l'application casse à l'exécution — exactement la panne d'uploads du jour.
+  Job **coverage** (informatif, `continue-on-error`) : publie le chiffre sans bloquer, le seuil de 70 % n'étant pas tenu aujourd'hui (~45 %). À repasser en bloquant une fois T1/T4 traités.
+  **Deux obstacles rencontrés et levés** :
+  · `next build` échoue sans variables d'environnement (`supabaseUrl is required`, évalué au chargement du module). Le workflow fournit 5 valeurs factices — vérifié qu'elles suffisent, et aucune connexion réseau n'est établie pendant le build.
+  · `npm run lint` était **déjà en échec** (1 erreur) : la CI aurait été rouge dès le premier commit. L'erreur portait sur `<a href="/">` dans `app/global-error.jsx` — un faux positif, car `next/link` dépend du routeur qui peut être lui-même en panne dans cet écran. Exception documentée plutôt que « corrigée ». `coverage/` a par ailleurs été ajouté aux ignorés ESLint (artefacts générés).
+  **Vérifié localement** en reproduisant les conditions CI (`.env` retiré, env factice) : `prisma generate`, `lint`, `test`, `build` — les 4 étapes OK.
 
 ### Alertes & observabilité
 
@@ -251,7 +256,7 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 | ~~4~~ | ~~S1~~ | ~~IDOR modification/suppression de modèle~~ | ~~15 min~~ | **✅ Fait 2026-08-10** |
 | ~~5~~ | ~~S3~~ | ~~IDOR + crédits `uploadToDriveAction`~~ | ~~15 min~~ | **✅ Fait 2026-08-10** |
 | ~~6~~ | ~~F4~~ | ~~Index manquants + procédure de migration~~ | ~~30 min~~ | **✅ Fait 2026-08-10** |
-| 7 | T3 | Pipeline CI | 45 min | ✅ |
+| ~~7~~ | ~~T3~~ | ~~Pipeline CI~~ | ~~45 min~~ | **✅ Fait 2026-08-10** |
 | 8 | F1+F2 | Validation des variables d'env au démarrage | 45 min | ✅ |
 | 9 | S5 | Rate limiting sur l'authentification | 1 h | ✅ (Upstash dispo) |
 | 10 | A1 | Sentry opérationnel | 1 h | ❌ **DSN manquant** |

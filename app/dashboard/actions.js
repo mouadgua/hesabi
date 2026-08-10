@@ -434,10 +434,21 @@ export async function updateTemplateAction(formData) {
     // Preserve the columns as-is for keys (they're already the field names)
     const structureJson = Object.fromEntries(columns.map(col => [col, null]))
 
-    await prisma.templateExtraction.update({
-        where: { id: templateId },
-        data: { nom_modele: nomModele, structure_json: structureJson }
+    const utilisateur = await prisma.utilisateur.findUnique({
+        where:  { id: user.id },
+        select: { cabinet_id: true },
     })
+    if (!utilisateur?.cabinet_id) throw new Error("Cabinet introuvable.")
+
+    // Scoped updateMany rather than update-by-id: a template belonging to
+    // another cabinet matches zero rows instead of being silently rewritten.
+    const { count } = await prisma.templateExtraction.updateMany({
+        where: { id: templateId, cabinet_id: utilisateur.cabinet_id },
+        data:  { nom_modele: nomModele, structure_json: structureJson },
+    })
+    // Same message whether it doesn't exist or belongs to someone else —
+    // no probing for template IDs across cabinets.
+    if (count === 0) throw new Error("Modèle introuvable.")
 
     revalidatePath('/dashboard/models')
 }
@@ -453,7 +464,29 @@ export async function deleteTemplateAction(formData) {
     const templateId = formData.get('template_id')
     if (!templateId) throw new Error("ID manquant.")
 
-    await prisma.templateExtraction.delete({ where: { id: templateId } })
+    const utilisateur = await prisma.utilisateur.findUnique({
+        where:  { id: user.id },
+        select: { cabinet_id: true },
+    })
+    if (!utilisateur?.cabinet_id) throw new Error("Cabinet introuvable.")
+
+    // Document.template_id is a restricted FK: refuse with a clear message
+    // rather than surfacing a raw Prisma constraint error.
+    const usedBy = await prisma.document.count({
+        where: { template_id: templateId, client: { cabinet_id: utilisateur.cabinet_id } },
+    })
+    if (usedBy > 0) {
+        throw new Error(
+            `Ce modèle est utilisé par ${usedBy} document${usedBy > 1 ? 's' : ''} et ne peut pas être supprimé.`
+        )
+    }
+
+    // Scoped deleteMany rather than delete-by-id — see updateTemplateAction.
+    const { count } = await prisma.templateExtraction.deleteMany({
+        where: { id: templateId, cabinet_id: utilisateur.cabinet_id },
+    })
+    if (count === 0) throw new Error("Modèle introuvable.")
+
     revalidatePath('/dashboard/models')
 }
 

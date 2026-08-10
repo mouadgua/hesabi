@@ -157,6 +157,8 @@
 - Création via IA à partir d'une image de document
 - Import depuis colonnes Excel (feature learning loop)
 - Modification et suppression de templates
+  - **Sécurisé le 2026-08-10** : `updateTemplateAction` et `deleteTemplateAction` opéraient par `id` sans filtrage `cabinet_id` — n'importe quel utilisateur authentifié pouvait réécrire ou supprimer les modèles d'un autre cabinet. Désormais `updateMany`/`deleteMany` scopés `{ id, cabinet_id }` avec contrôle du `count`. Vérifié par simulation d'attaque (payload falsifié) : refus des deux côtés, modèle victime intact.
+  - Suppression d'un modèle encore référencé par des documents : message explicite au lieu d'une erreur FK brute
 - Duplication d'un template existant
 
 ### Abonnement & crédits

@@ -7,71 +7,18 @@ import { redirect } from 'next/navigation'
 import { aiExtract } from '@/lib/ai'
 
 // ============================================================================
-// 1. UPLOAD DE DOCUMENTS (AVEC DÉDUCTION DE CRÉDITS)
+// UPLOAD DE DOCUMENTS
 // ============================================================================
-export async function uploadToDriveAction(formData) {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error("Non autorisé")
-
-    const clientId = formData.get('client_id')
-    const dossierId = formData.get('dossier_id')
-    const files = formData.getAll('file')
-
-    if (!files || files.length === 0) return
-
-    // 1. Vérifier que le client existe et récupérer le cabinet_id
-    const client = await prisma.client.findUnique({
-        where: { id: clientId },
-        select: { cabinet_id: true }
-    })
-
-    if (!client) throw new Error("Client introuvable")
-
-    // 2. Déduction atomique des crédits — check + decrement en une seule requête
-    // Empêche la race condition (2 onglets simultanés consommant plus que le quota)
-    const creditResult = await prisma.cabinet.updateMany({
-        where: { id: client.cabinet_id, credits: { gte: files.length } },
-        data:  { credits: { decrement: files.length } },
-    })
-    if (creditResult.count === 0) {
-        const current = await prisma.cabinet.findUnique({
-            where: { id: client.cabinet_id }, select: { credits: true }
-        })
-        throw new Error(`Crédits insuffisants. Il vous reste ${current?.credits ?? 0} extractions, mais vous essayez d'envoyer ${files.length} fichiers.`)
-    }
-
-    // 3. Boucle d'upload des fichiers vers Supabase
-    for (const file of files) {
-        // Générer un nom unique pour éviter les conflits
-        const fileExt = file.name.split('.').pop()
-        const uniqueFileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`
-        const filePath = `${clientId}/${uniqueFileName}`
-
-        // Upload dans le bucket 'documents'
-        const { error: uploadError } = await supabase.storage
-            .from('documents')
-            .upload(filePath, file)
-
-        if (uploadError) throw new Error("Erreur d'upload Supabase: " + uploadError.message)
-
-        // Créer l'entrée dans la base de données Prisma
-        await prisma.document.create({
-            data: {
-                client_id: clientId,
-                dossier_id: (dossierId && dossierId !== 'ROOT') ? dossierId : null,
-                nom_fichier: file.name,
-                chemin_storage: filePath,
-                statut: 'A_EXTRAIRE'
-            }
-        })
-    }
-
-    revalidatePath('/dashboard/extraction')
-}
+// `uploadToDriveAction` a été supprimée (2026-08-10, checklist S3).
+// Elle lisait `client_id` depuis le formulaire sans vérifier l'appartenance
+// au cabinet : un identifiant forgé faisait débiter les crédits du cabinet
+// visé et y déposait les documents. Plus aucun appelant depuis le passage à
+// `/api/upload`, qui est la seule voie d'upload et porte la déduplication,
+// la validation d'intégrité et la classification précoce.
+// ============================================================================
 
 // ============================================================================
-// 2. SUPPRESSION DE DOCUMENTS
+// 1. SUPPRESSION DE DOCUMENTS
 // ============================================================================
 export async function deleteDocumentsAction(formData) {
     const supabase = await createClient()

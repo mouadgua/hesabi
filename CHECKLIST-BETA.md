@@ -55,10 +55,10 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
   Le correctif traite les deux : lecture de `tags`, normalisation des clés en snake_case (même logique que l'action voisine), `cabinet_id` côté serveur.
   **Vérifié sur l'app réelle** : création de modèle OK (2/2), persistance après rechargement, et contrôle en base — `cabinet_id` du modèle = celui de la session. `structure_json` générée correctement (`{"montant_ht":null,"date_de_facture":null}`). Modèle de test supprimé.
 
-- [ ] **S3 — IDOR + vol de crédits via `uploadToDriveAction`**
-  `client_id` vient du formulaire, `prisma.client.findUnique({ where: { id: clientId } })` ne vérifie pas l'appartenance au cabinet. Conséquence : décrément des crédits **du cabinet victime** et dépôt de documents chez lui. Action non utilisée par l'UI actuelle mais **exportée, donc invocable directement** (les Server Actions sont adressables par ID).
-  · Fichier : `app/dashboard/actions.js:12-71`
-  · Sévérité : **bloquant** · Effort : **15 min** (ou suppression pure si code mort confirmé)
+- [x] ~~**S3 — IDOR + vol de crédits via `uploadToDriveAction`**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-idor-upload-action`)
+  **Action supprimée** plutôt que corrigée. Code mort confirmé rigoureusement : une seule occurrence dans tout le dépôt — sa propre définition, zéro appelant (`grep` sur `.js/.jsx/.ts/.tsx`, plus vérification de l'historique git). `/api/upload` est l'unique voie d'upload depuis la refonte, et porte en plus la déduplication, la validation d'intégrité et la classification précoce.
+  Maintenir une seconde voie d'upload inutilisée revenait à garder une surface d'attaque et un risque de divergence. Un commentaire à son emplacement documente la suppression et sa raison.
+  Vérifié : build production OK, 60/60 tests, aucune référence résiduelle.
 
 - [x] ~~**S4 — Cron `recovery` en fail-open**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-cron-failopen`)
   Le garde-fou échoue désormais **en fermeture**, aligné sur `worker-extraction` : secret absent en production → **503**, la route refuse de s'exécuter et journalise la raison. En développement, un avertissement explicite remplace le silence. Les deux en-têtes restent acceptés (`Authorization: Bearer` pour le cron Vercel, `x-worker-secret` pour les appels manuels).
@@ -237,7 +237,7 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 | ~~2~~ | ~~S4~~ | ~~Fail-open du cron~~ | ~~10 min~~ | **✅ Fait 2026-08-10** |
 | ~~3~~ | ~~S2~~ | ~~IDOR création de modèle~~ | ~~10 min~~ | **✅ Fait 2026-08-10** |
 | ~~4~~ | ~~S1~~ | ~~IDOR modification/suppression de modèle~~ | ~~15 min~~ | **✅ Fait 2026-08-10** |
-| 5 | S3 | IDOR + crédits `uploadToDriveAction` | 15 min | ✅ |
+| ~~5~~ | ~~S3~~ | ~~IDOR + crédits `uploadToDriveAction`~~ | ~~15 min~~ | **✅ Fait 2026-08-10** |
 | 6 | F4 | 4 index manquants + procédure de migration | 30 min | ✅ |
 | 7 | T3 | Pipeline CI | 45 min | ✅ |
 | 8 | F1+F2 | Validation des variables d'env au démarrage | 45 min | ✅ |

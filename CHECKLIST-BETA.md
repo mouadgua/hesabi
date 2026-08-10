@@ -37,10 +37,17 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
 
 ### Sécurité
 
-- [ ] **S1 — IDOR : modification/suppression de modèles d'un autre cabinet**
-  `updateTemplateAction` (app/dashboard/actions.js:421) et `deleteTemplateAction` (:440) font `update`/`delete` par `id` **sans aucun filtrage `cabinet_id`**. Tout utilisateur authentifié peut renommer, réécrire ou supprimer les modèles d'extraction de n'importe quel cabinet.
-  · Fichier : `app/dashboard/actions.js:404-442`
-  · Sévérité : **bloquant** · Effort : **15 min**
+- [x] ~~**S1 — IDOR : modification/suppression de modèles d'un autre cabinet**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-idor-update-delete-template`)
+  Les deux actions passent de `update`/`delete` par `id` nu à `updateMany`/`deleteMany` scopés `{ id, cabinet_id }`, avec contrôle du `count` retourné. Message identique (« Modèle introuvable ») que le modèle n'existe pas ou appartienne à autrui — pas de sondage possible d'identifiants entre cabinets.
+  Ajout au passage : `Document.template_id` étant une FK restreinte, la suppression d'un modèle encore utilisé renvoie désormais un message explicite (« utilisé par N document(s) ») au lieu d'une erreur Prisma brute.
+  **Vérifié par simulation d'attaque réelle** — cabinet témoin isolé créé en base, puis interception des requêtes Playwright pour remplacer l'identifiant de mon modèle par celui du modèle victime :
+  | Attaque (payload falsifié) | Résultat |
+  |---|---|
+  | Modifier le modèle d'un autre cabinet | **Refusé** — « Modèle introuvable » |
+  | Supprimer le modèle d'un autre cabinet | **Refusé** — « Modèle introuvable » |
+  | Contrôle en base après les 2 attaques | Modèle victime **intact** : nom inchangé, `structure_json` inchangée |
+  | Modifier / supprimer **mon propre** modèle | **Accepté** (2/2) — aucune régression |
+  Données de test entièrement supprimées (cabinet témoin + modèles).
 
 - [x] ~~**S2 — IDOR : écriture de modèle dans un cabinet arbitraire**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-idor-create-template`)
   `cabinet_id` est désormais résolu depuis la session (`user.id` → `Utilisateur.cabinet_id`) et **n'est plus jamais lu depuis le formulaire**, aligné sur `createTemplateFromColumnsAction` qui appliquait déjà le bon pattern.
@@ -229,7 +236,7 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 | ~~1~~ | ~~T2~~ | ~~Script `npm test`~~ | ~~2 min~~ | **✅ Fait 2026-08-10** |
 | ~~2~~ | ~~S4~~ | ~~Fail-open du cron~~ | ~~10 min~~ | **✅ Fait 2026-08-10** |
 | ~~3~~ | ~~S2~~ | ~~IDOR création de modèle~~ | ~~10 min~~ | **✅ Fait 2026-08-10** |
-| 4 | S1 | IDOR modification/suppression de modèle | 15 min | ✅ |
+| ~~4~~ | ~~S1~~ | ~~IDOR modification/suppression de modèle~~ | ~~15 min~~ | **✅ Fait 2026-08-10** |
 | 5 | S3 | IDOR + crédits `uploadToDriveAction` | 15 min | ✅ |
 | 6 | F4 | 4 index manquants + procédure de migration | 30 min | ✅ |
 | 7 | T3 | Pipeline CI | 45 min | ✅ |

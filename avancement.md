@@ -44,6 +44,7 @@
   - Confirmation utilisateur : renvoyer la requête avec `force_upload=true` pour uploader malgré tout
   - Upload en masse : chaque fichier est indépendant, un doublon ne bloque pas les autres fichiers du batch
   - Migration SQL : `prisma/add_deduplication.sql`
+  - ⚠️ **Corrigé le 2026-08-10** — la déduplication n'avait **jamais fonctionné** depuis sa fusion : `crypto.createHash()` était appelé sans import (le `crypto` global d'un route handler est la Web Crypto API, sans `createHash`), et le client Prisma généré ignorait `file_hash`. Résultat : **tous les uploads renvoyaient HTTP 500**. Corrigé par `import { createHash } from 'node:crypto'` + `prisma generate`. Vérifié de bout en bout (upload 200, crédit décrémenté, hash calculé, doublon détecté).
 - Vérification des crédits avant lancement d'un batch : terminé
   - `GET /api/upload/precheck?count=N` : lecture seule (`cabinet.credits >= N`), aucun décrément — la déduction atomique reste l'unique source de vérité, pas de risque de race condition réintroduite
   - Déclenché côté client (`ExtractionHub.jsx`) avant tout batch multi-fichiers (upload multiple + dossier complet)

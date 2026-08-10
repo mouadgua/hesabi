@@ -35,6 +35,15 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
 
 ## 🔴 BLOQUANT AVANT BÊTA
 
+### Régressions découvertes en testant (hors audit initial)
+
+- [x] ~~**R1 — Tous les uploads renvoyaient HTTP 500**~~ — **✅ CORRIGÉ le 2026-08-10** (`hotfix/upload-crypto-createhash`)
+  Deux causes cumulées, toutes deux introduites par la fonctionnalité de déduplication et **jamais détectées avant aujourd'hui** :
+  1. `crypto.createHash(...)` sans import — dans un route handler Next.js, le `crypto` global est la **Web Crypto API** : elle expose `randomUUID()` (utilisé plus bas, d'où l'illusion que `crypto` était le module Node) mais **pas** `createHash`. Corrigé par `import { createHash } from 'node:crypto'`.
+  2. **Client Prisma périmé** — `file_hash` était présent dans `schema.prisma` et en base, mais absent du client généré : `PrismaClientValidationError` sur la requête de déduplication. Corrigé par `prisma generate` (voir aussi F4 : rien n'automatise cette étape).
+  **Pourquoi ça n'avait pas été vu** : les vérifications précédentes s'arrêtaient à `node --check` et `next build`, qui ne voient pas une erreur d'exécution. Aucun upload réel n'avait été effectué.
+  **Vérifié cette fois de bout en bout** : `POST /api/upload` → **200**, crédit décrémenté (36 → 35), `file_hash` calculé (64 hex), classification aboutie (`type=facture`, `langue=fr`), document rattaché au bon cabinet. Ré-upload du même fichier → `{"duplicate":true}` : **la déduplication n'avait jamais fonctionné depuis sa fusion**. Document de test et fichier storage supprimés, crédit restitué.
+
 ### Sécurité
 
 - [x] ~~**S1 — IDOR : modification/suppression de modèles d'un autre cabinet**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-idor-update-delete-template`)

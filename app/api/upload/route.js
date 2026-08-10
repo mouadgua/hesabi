@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { createHash } from 'node:crypto'
 import { createClient } from '@/utils/supabase/server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import prisma from '@/lib/prisma'
@@ -75,7 +76,9 @@ export async function POST(request) {
   }
 
   // ── Content hash — used for duplicate detection within the cabinet ────────
-  const fileHash   = crypto.createHash('sha256').update(bytes).digest('hex')
+  // node:crypto — the global `crypto` here is Web Crypto, which has
+  // randomUUID() (used below) but no createHash().
+  const fileHash   = createHash('sha256').update(bytes).digest('hex')
   const forceUpload = formData.get('force_upload') === 'true'
 
   // ── Cabinet + credits ─────────────────────────────────────────────────────

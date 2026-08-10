@@ -111,10 +111,11 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
 
 ### Alertes & observabilité
 
-- [ ] **A1 — Sentry est un stub non fonctionnel**
-  `instrumentation.js` retourne immédiatement si `SENTRY_DSN` est absent, et le bloc `init()` est **entièrement commenté**. `@sentry/nextjs` n'est pas installé. **Aucune erreur de production n'est capturée aujourd'hui.**
-  · Fichier : `instrumentation.js:4-12`
-  · Sévérité : **bloquant** · Effort : **1 h** · **[OUTIL EXTERNE REQUIS : Sentry]**
+- [x] ~~**A1 — Sentry est un stub non fonctionnel**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-env-validation`)
+  L'assistant Sentry avait posé le SDK et les configs, mais `instrumentation.js` conservait l'ancien stub et **n'importait jamais** `sentry.server.config.js` : ni le serveur ni le client ne s'initialisaient. Ajout des imports par runtime (`nodejs` / `edge`) et de l'export **`onRequestError`**, sans lequel les erreurs des route handlers App Router ne remontent pas.
+  **Vérifié par sonde temporaire** (route créée, interrogée, puis supprimée) : `initialized: true`, `dsnPresent: true`, `eventId` généré, et surtout **`flushed: true`** — l'événement a réellement été transmis à Sentry, pas seulement mis en file.
+  Les pages de démonstration ajoutées par l'assistant (`app/sentry-example-page/`, `app/api/sentry-example-api/`) ont été supprimées : elles n'ont pas leur place en production. Vérifié absentes du build.
+  À noter : le DSN est inscrit en dur dans les configs — c'est un point d'ingestion public, pas un secret.
 
 - [ ] **A2 — Aucune alerte sur le pipeline d'extraction**
   Le circuit breaker s'ouvre, `ALL_PROVIDERS_FAILED` se déclenche, le cron récupère 40 documents bloqués — tout cela finit en `console.error` que personne ne lit. Correspond aux sections 1 et 2 de `checkliste_requirements.md`, marquées bloquantes.
@@ -128,15 +129,13 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
 
 ### Fiabilité opérationnelle
 
-- [ ] **F1 — Aucune validation des variables d'environnement au démarrage**
-  Aucun garde-fou : l'app démarre sans `GEMINI_API_KEY`, sans `WORKER_SECRET` (→ S4), sans `SUPABASE_SERVICE_ROLE_KEY`. Les échecs surviennent silencieusement au premier usage, en production. Correspond au point « Variable d'environnement/secret manquant au démarrage » de `checkliste_requirements.md`.
-  · Fichier : `instrumentation.js` (emplacement naturel)
-  · Sévérité : **bloquant** · Effort : **45 min**
+- [x] ~~**F1 — Aucune validation des variables d'environnement au démarrage**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-env-validation`)
+  `lib/env.js` + appel depuis `instrumentation.js` (démarrage serveur, avant toute requête). Trois niveaux : **requis partout**, **requis en production seulement** (avertissement en dev, où l'app doit rester lançable en mode dégradé), et **facultatif** (la fonctionnalité concernée est simplement indisponible).
+  Chaque variable est accompagnée de sa conséquence concrète, pas seulement de son nom — par ex. « `NEXT_PUBLIC_APP_URL` — sans elle les appels internes au worker pointent sur localhost ».
+  **Vérifié dans les deux sens** : environnement vide en production → 8 manquantes + 9 dégradées listées explicitement ; environnement réel → **0 manquante, 5 dégradées** (`NEXT_PUBLIC_APP_URL`, `RESEND_API_KEY`, `IP_HASH_SALT`, `DEMO_ADMIN_SECRET`, `SENTRY_DSN`) — exactement les manques relevés pendant l'audit.
 
-- [ ] **F2 — Repli silencieux du service role vers la clé anon**
-  `SUPABASE_SERVICE_ROLE_KEY || NEXT_PUBLIC_SUPABASE_ANON_KEY` : si la clé service role manque, le code bascule sur la clé publique **sans rien signaler**, et les opérations storage échouent de façon incompréhensible.
-  · Fichiers : `app/api/upload/route.js:12`, `app/api/export-mass/route.js:10`, `app/api/worker-extraction/route.js:33`
-  · Sévérité : **bloquant** · Effort : **15 min** (couvert par F1)
+- [x] ~~**F2 — Repli silencieux du service role vers la clé anon**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-env-validation`)
+  Traité dans `lib/env.js` par une ligne dédiée : si `SUPABASE_SERVICE_ROLE_KEY` manque alors que la clé anon est présente, le rapport dit explicitement que le code retomberait sur la clé publique et que les écritures storage échoueraient — au lieu de laisser apparaître, plus tard, ce qui ressemble à un problème de permissions.
 
 - [ ] **F3 — Sauvegardes jamais vérifiées ni documentées**
   Aucune trace de stratégie de sauvegarde dans le dépôt. Neon et Supabase font des snapshots par défaut selon le plan, mais **la rétention n'est pas documentée et aucune restauration n'a jamais été testée**. `checkliste_requirements.md` liste explicitement « Test de restauration effectué et documenté (pas juste supposé fonctionner) ».
@@ -257,9 +256,9 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 | ~~5~~ | ~~S3~~ | ~~IDOR + crédits `uploadToDriveAction`~~ | ~~15 min~~ | **✅ Fait 2026-08-10** |
 | ~~6~~ | ~~F4~~ | ~~Index manquants + procédure de migration~~ | ~~30 min~~ | **✅ Fait 2026-08-10** |
 | ~~7~~ | ~~T3~~ | ~~Pipeline CI~~ | ~~45 min~~ | **✅ Fait 2026-08-10** |
-| 8 | F1+F2 | Validation des variables d'env au démarrage | 45 min | ✅ |
+| ~~8~~ | ~~F1+F2~~ | ~~Validation des variables d'env au démarrage~~ | ~~45 min~~ | **✅ Fait 2026-08-10** |
 | 9 | S5 | Rate limiting sur l'authentification | 1 h | ✅ (Upstash dispo) |
-| 10 | A1 | Sentry opérationnel | 1 h | ❌ **DSN manquant** |
+| ~~10~~ | ~~A1~~ | ~~Sentry opérationnel~~ | ~~1 h~~ | **✅ Fait 2026-08-10** |
 | 11 | A2 | Alertes pipeline d'extraction | 2-3 h | ❌ dépend de A1 |
 | 12 | A3 | Sonde de disponibilité | 20 min | ⏳ à confirmer |
 | 13 | T1 | Tests d'isolation multi-tenant | 3-4 h | ✅ |

@@ -1,30 +1,19 @@
 import { Resend } from 'resend'
 import { NextResponse } from 'next/server'
 import { sanitizeText, sanitizeEmail, escapeHtml } from '@/lib/sanitize'
-
-// Simple in-memory rate limit: max 3 contact emails per IP per hour
-if (!global.__contact_rl) global.__contact_rl = new Map()
-const contactRL = global.__contact_rl
-const CONTACT_MAX   = 3
-const CONTACT_WIN   = 60 * 60 * 1000
-
-function checkContactRate(ip) {
-  const now    = Date.now()
-  const record = contactRL.get(ip)
-  if (!record || now - record.windowStart > CONTACT_WIN) {
-    contactRL.set(ip, { count: 1, windowStart: now })
-    return true
-  }
-  if (record.count >= CONTACT_MAX) return false
-  record.count += 1
-  return true
-}
+import { checkAuthRateLimit, clientIp, formatRetryDelay } from '@/lib/authRateLimit'
 
 export async function POST(req) {
   // ── Rate limit ────────────────────────────────────────────────────────────
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
-  if (!checkContactRate(ip)) {
-    return NextResponse.json({ error: 'Trop de messages envoyés. Réessayez plus tard.' }, { status: 429 })
+  // Était un compteur en mémoire : chaque instance Vercel avait le sien, donc
+  // il suffisait de retomber sur une autre pour repartir de zéro.
+  const ip = clientIp(req.headers)
+  const rl = await checkAuthRateLimit('contact', `ip:${ip}`)
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { error: `Trop de messages envoyés. Réessayez dans ${formatRetryDelay(rl.retryAfterSec)}.` },
+      { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } }
+    )
   }
 
   // ── Parse + sanitize ──────────────────────────────────────────────────────

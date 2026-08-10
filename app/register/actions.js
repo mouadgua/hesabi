@@ -45,8 +45,43 @@ export async function registerUser(formData) {
   if (!keyRecord) {
     redirect('/register?error=' + encodeURIComponent("Clé d'accès invalide."))
   }
-  if (keyRecord.used) {
-    redirect('/register?error=' + encodeURIComponent("Cette clé a déjà été utilisée."))
+  // Le schéma porte is_active, expires_at, max_uses/use_count et email :
+  // aucun n'était vérifié, une clé révoquée ou expirée restait utilisable.
+  if (!keyRecord.is_active) {
+    redirect('/register?error=' + encodeURIComponent("Cette clé a été révoquée."))
+  }
+  if (keyRecord.expires_at && keyRecord.expires_at < new Date()) {
+    redirect('/register?error=' + encodeURIComponent("Cette clé a expiré."))
+  }
+  // max_uses null = usage unique, régi par le drapeau `used`.
+  if (keyRecord.max_uses == null) {
+    if (keyRecord.used) {
+      redirect('/register?error=' + encodeURIComponent("Cette clé a déjà été utilisée."))
+    }
+  } else if (keyRecord.use_count >= keyRecord.max_uses) {
+    redirect('/register?error=' + encodeURIComponent("Cette clé a atteint sa limite d'utilisations."))
+  }
+  // Clé nominative : réservée à une adresse précise.
+  if (keyRecord.email && keyRecord.email.toLowerCase() !== email) {
+    redirect('/register?error=' + encodeURIComponent("Cette clé est réservée à une autre adresse email."))
+  }
+
+  // Consommation atomique : le contrôle ci-dessus et la mise à jour finale sont
+  // deux requêtes distinctes, donc deux inscriptions simultanées avec la même
+  // clé passeraient toutes les deux. On réserve la clé maintenant, en une seule
+  // opération conditionnelle — même parade que pour les crédits.
+  const claim = await prisma.betaKey.updateMany({
+    where: {
+      key:       betaKey,
+      is_active: true,
+      ...(keyRecord.max_uses == null
+        ? { used: false }
+        : { use_count: { lt: keyRecord.max_uses } }),
+    },
+    data: { use_count: { increment: 1 } },
+  })
+  if (claim.count === 0) {
+    redirect('/register?error=' + encodeURIComponent("Cette clé vient d'être utilisée. Demandez-en une nouvelle."))
   }
 
   // ── 2. Create user via admin API (email auto-confirmed, no verification) ───
@@ -63,6 +98,12 @@ export async function registerUser(formData) {
   })
 
   if (adminError) {
+    // La clé a été réservée juste avant : on la relâche, sinon un email déjà
+    // pris consommerait définitivement une clé valide.
+    await prisma.betaKey.updateMany({
+      where: { key: betaKey },
+      data:  { use_count: { decrement: 1 } },
+    }).catch(e => console.error('[register] Libération de la clé impossible :', e.message))
     redirect('/register?error=' + encodeURIComponent(adminError.message))
   }
 

@@ -158,20 +158,20 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
 
 ## 🟠 IMPORTANT (à traiter rapidement après le lancement)
 
-- [ ] **S7 — Validation des clés bêta incomplète et non atomique**
-  Le schéma `BetaKey` porte `is_active`, `expires_at`, `max_uses`, `use_count`, `email` — **le code n'en vérifie aucun**, il ne teste que `used`. De plus le check et le `update` sont séparés : deux inscriptions simultanées avec la même clé passent toutes les deux (même faille que la race condition crédits déjà corrigée ailleurs).
-  · Fichier : `app/register/actions.js:32-62`
-  · Sévérité : important · Effort : **45 min**
+- [x] ~~**S7 — Validation des clés bêta incomplète et non atomique**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-betakey-feedback`)
+  Le schéma portait `is_active`, `expires_at`, `max_uses`/`use_count` et `email` — **aucun n'était vérifié** : une clé révoquée, expirée, épuisée ou nominative restait utilisable par n'importe qui. Les quatre contrôles sont ajoutés, chacun avec son message distinct.
+  **Consommation rendue atomique** : le contrôle et la mise à jour étaient deux requêtes séparées, donc deux inscriptions simultanées avec la même clé passaient toutes les deux. La clé est désormais réservée par un `updateMany` conditionnel unique — même parade que pour les crédits — et **relâchée** si la création du compte échoue ensuite, pour ne pas perdre une clé valide sur un email déjà pris.
+  **Vérifié sur le formulaire réel** : les 5 cas de rejet (révoquée, expirée, réservée à une autre adresse, quota atteint, inexistante) refusés avec le bon message ; une clé valide aboutit toujours à l'inscription (redirection `/onboarding`).
+  **Atomicité vérifiée** : 5 réservations simultanées sur une clé `max_uses: 1` → **une seule** réussit, `use_count` final = 1.
+  Comptes et clés de test entièrement supprimés (Supabase Auth + base).
 
 - [ ] **S8 — CSP autorise `'unsafe-inline'` sur les scripts**
   `script-src 'self' 'unsafe-inline'` annule une grande partie de la protection XSS de la CSP.
   · Fichier : `next.config.mjs:18`
   · Sévérité : important · Effort : **2-3 h** (migration vers nonces)
 
-- [ ] **S9 — Aucune validation d'appartenance sur `document_id` du feedback**
-  `missing-field` accepte n'importe quel UUID de document sans vérifier le cabinet. Donnée analytique en écriture seule, donc impact limité, mais c'est un identifiant cross-tenant stocké tel quel.
-  · Fichier : `app/api/feedback/missing-field/route.js:23-35`
-  · Sévérité : important · Effort : **15 min**
+- [x] ~~**S9 — Aucune validation d'appartenance sur `document_id` du feedback**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-betakey-feedback`)
+  L'identifiant est désormais vérifié comme appartenant au cabinet de l'appelant avant d'être stocké. S'il ne l'est pas, il est **ignoré** (mis à `null`) plutôt que de faire échouer la requête : c'est une donnée analytique, et perdre le retour utilisateur serait pire que perdre la référence au document.
 
 - [ ] **S10 — Rate limiting et circuit breaker non distribués**
   `lib/rateLimiter.js`, le rate limit admin de `proxy.js`, le circuit breaker et le cache IA de `lib/ai.js` vivent tous dans des `Map` en mémoire. Sur Vercel multi-instances, chaque instance a son propre état → limites contournables et circuit breaker inefficace.
@@ -266,8 +266,8 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 | 12 | A3 | Sonde de disponibilité | 20 min | ⏳ à confirmer |
 | 13 | T1 | Tests d'isolation multi-tenant | 3-4 h | ✅ |
 | 14 | F3 | Sauvegardes vérifiées et documentées | 1-2 h | ⏳ hors code |
-| 15 | S7 | Durcissement des clés bêta | 45 min | ✅ |
-| 16 | S9 | Appartenance du `document_id` feedback | 15 min | ✅ |
+| ~~15~~ | ~~S7~~ | ~~Durcissement des clés bêta~~ | ~~45 min~~ | **✅ Fait 2026-08-10** |
+| ~~16~~ | ~~S9~~ | ~~Appartenance du `document_id` feedback~~ | ~~15 min~~ | **✅ Fait 2026-08-10** |
 | 17 | S10 | Rate limiting distribué | 2-3 h | ✅ (Upstash dispo) |
 | 18 | A4 | Logs structurés | 2-3 h | ✅ |
 | 19 | S8 | CSP sans `unsafe-inline` | 2-3 h | ✅ |

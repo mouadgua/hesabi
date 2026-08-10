@@ -20,11 +20,29 @@ export async function POST(request) {
     // ── Sanitize ──────────────────────────────────────────────────────────────
     const cleanFieldName  = sanitizeText(field_name,   50)
     const cleanDocType    = VALID_DOC_TYPES.has(document_type) ? document_type : 'autre'
-    const cleanDocumentId = typeof document_id === 'string' && /^[0-9a-f-]{36}$/.test(document_id)
+    let cleanDocumentId = typeof document_id === 'string' && /^[0-9a-f-]{36}$/.test(document_id)
       ? document_id : null
 
     if (!cleanFieldName) {
       return NextResponse.json({ error: 'Nom du champ requis' }, { status: 400 })
+    }
+
+    // L'identifiant venait du client sans contrôle : n'importe quel UUID
+    // pouvait être stocké, y compris celui d'un document d'un autre cabinet.
+    // Donnée analytique, donc on ignore une référence non vérifiable plutôt
+    // que de rejeter le retour utilisateur.
+    if (cleanDocumentId) {
+      const utilisateur = await prisma.utilisateur.findUnique({
+        where:  { id: user.id },
+        select: { cabinet_id: true },
+      })
+      const owned = utilisateur?.cabinet_id
+        ? await prisma.document.findFirst({
+            where:  { id: cleanDocumentId, client: { cabinet_id: utilisateur.cabinet_id } },
+            select: { id: true },
+          })
+        : null
+      if (!owned) cleanDocumentId = null
     }
 
     await prisma.missingFieldRequest.create({

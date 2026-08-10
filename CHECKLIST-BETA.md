@@ -72,10 +72,9 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
   · Fichier : `__tests__/` (à créer)
   · Sévérité : **bloquant** · Effort : **3-4 h**
 
-- [ ] **T2 — Le script `npm test` n'existe pas**
-  `package.json` n'expose que `dev`, `build`, `start`, `lint`. `npm test` échoue avec « Missing script ». Les 60 tests existants ne sont donc lancés par personne automatiquement.
-  · Fichier : `package.json`
-  · Sévérité : **bloquant** · Effort : **2 min**
+- [x] ~~**T2 — Le script `npm test` n'existe pas**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-npm-test`)
+  Ajout de `test` (`jest`), `test:watch` et `test:coverage` dans `package.json`.
+  Vérifié : `npm test` → **60/60, exit 0**. `npm run test:coverage` → **exit 1**, seuil de 70 % non atteint (lignes 45,49 % / fonctions 38,63 %) — c'est le comportement voulu, la CI du point T3 s'appuiera dessus.
 
 - [ ] **T3 — Aucune CI**
   Pas de `.github/workflows/`, pas de hook pre-commit. Rien n'exécute tests, lint ou build avant un déploiement.
@@ -221,7 +220,7 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 |---|---|---|---|---|
 | # | Réf | Point | Effort | Prêt ? |
 |---|---|---|---|---|
-| 1 | T2 | Script `npm test` | 2 min | ✅ |
+| ~~1~~ | ~~T2~~ | ~~Script `npm test`~~ | ~~2 min~~ | **✅ Fait 2026-08-10** |
 | 2 | S4 | Fail-open du cron | 10 min | ✅ |
 | 3 | S2 | IDOR création de modèle | 10 min | ✅ |
 | 4 | S1 | IDOR modification/suppression de modèle | 15 min | ✅ |

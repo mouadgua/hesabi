@@ -345,12 +345,20 @@ prisma/
 
 ```
 __tests__/
-├── lib/ai.test.js           Tests unitaires pipeline IA
-├── lib/rateLimiter.test.js  Tests rate limiter
-└── lib/sanitize.test.js     Tests validation inputs
+├── lib/ai.test.js           Tests unitaires pipeline IA (15 tests)
+├── lib/rateLimiter.test.js  Tests rate limiter (11 tests)
+└── lib/sanitize.test.js     Tests validation inputs (34 tests)
 ```
 
-Lancé avec `npm test` (Jest + ESM).
+**Scripts** (ajoutés le 2026-08-10 — ils n'existaient pas auparavant, `npm test` échouait sur « Missing script ») :
+
+| Commande | Effet |
+|---|---|
+| `npm test` | Lance les 60 tests (Jest + ESM) — **passe actuellement 60/60** |
+| `npm run test:watch` | Mode watch pour le développement |
+| `npm run test:coverage` | Couverture + seuil global de 70 % (`jest.config.mjs`) |
+
+⚠️ **`npm run test:coverage` échoue volontairement aujourd'hui** : couverture réelle **44,6 %** (lignes 45,49 % · fonctions 38,63 %) contre un seuil de 70 %. La couverture ne mesure que `lib/` et `utils/` — `app/` (routes API et Server Actions) est à **0 %**. Voir `CHECKLIST-BETA.md` (points T1, T4).
 
 ---
 

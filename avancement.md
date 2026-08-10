@@ -190,6 +190,7 @@
 
 ### Infrastructure (post-audit)
 - Cron recovery `/api/cron/recovery` (toutes les 5 min) — passe les documents bloqués en `EN_COURS_IA` depuis +10 min en `REJETE`
+  - **Fail-closed depuis le 2026-08-10** : si `WORKER_SECRET` est absent en production, la route renvoie **503** et refuse de s'exécuter (auparavant la vérification entière était sautée, rendant publique une route capable de rejeter en masse tous les documents en cours). Accepte `Authorization: Bearer` (cron Vercel) ou `x-worker-secret` (appel manuel).
 - `vercel.json` avec cron configuré
 - Fix race condition crédits : `updateMany({ where: { credits: { gte: N } } })`
 - Fix N+1 dans `findMatchingTemplate` : 1 requête OR au lieu de 4 séquentielles

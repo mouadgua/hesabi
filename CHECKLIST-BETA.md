@@ -17,7 +17,7 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
 | Upstash Redis | ✅ `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` présents → **S10 débloqué** |
 | Sentry | ✅ SDK installé et **DSN disponible** (`sentry.server.config.js`) → A1/A2 débloqués, reste le câblage |
 | k6 | ✅ Installé (v2.2.0) → **T6 débloqué** |
-| Variables absentes du `.env` local | `SENTRY_DSN`, `DEMO_ADMIN_SECRET`, `RESEND_API_KEY`, `IP_HASH_SALT`, `NEXT_PUBLIC_APP_URL` — à confirmer côté Vercel (voir F1) |
+| Variables absentes du `.env` local | `RESEND_API_KEY`, `IP_HASH_SALT`, `DEMO_ADMIN_SECRET` — fonctionnalités secondaires. `SENTRY_DSN` est facultative (DSN déjà en dur). **`NEXT_PUBLIC_APP_URL` renseignée le 2026-08-11** (`http://localhost:3000` en local) — chaîne dashboard → worker vérifiée fonctionnelle. **⚠️ À définir sur l'URL de production côté Vercel avant le lancement** |
 
 **Effet de bord constaté** : sans grant `authenticated` sur `Document`, l'abonnement Supabase Realtime d'`ExtractionHub.jsx:192` ne peut recevoir aucun événement. Le rafraîchissement de l'UI repose en réalité sur le polling de secours (`setInterval` 4 s). Non bloquant, mais la fonctionnalité annoncée ne fonctionne pas.
 

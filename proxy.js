@@ -19,10 +19,85 @@ function isAdminRateLimited(ip) {
   return false
 }
 
+// ── Content-Security-Policy ────────────────────────────────────────────────────
+//
+// Deux politiques, parce que les contraintes ne sont pas les mêmes selon le
+// chemin :
+//
+//   /dashboard, /admin — les données comptables des cabinets. Politique stricte
+//     à base de nonce, sans 'unsafe-inline' : un script injecté ne peut pas
+//     s'exécuter sans deviner une valeur aléatoire régénérée à chaque requête.
+//     Ces pages sont **déjà rendues à la demande** (22 routes, aucune statique),
+//     donc le nonce ne coûte rien ici.
+//
+//   pages publiques — landing, /demo, /support. Aucune donnée utilisateur à
+//     voler, et elles sont générées statiquement. Un nonce y est impossible :
+//     il serait posé dans l'en-tête au moment de la requête alors que le HTML
+//     mis en cache porterait celui d'une requête précédente, et tous les
+//     scripts seraient bloqués. Elles gardent donc 'unsafe-inline' et
+//     conservent leur mise en cache CDN.
+//
+// 'unsafe-eval' n'est ajouté qu'en développement : React s'en sert pour
+// reconstruire les traces d'erreur serveur dans le navigateur.
+
+const SUPABASE_ORIGIN = 'https://wjhuhaojygopjzqmdkqa.supabase.co'
+const SENTRY_INGEST   = 'https://o4511886554693632.ingest.de.sentry.io'
+
+function buildCsp({ nonce, isDev }) {
+  const scriptSrc = nonce
+    // 'strict-dynamic' laisse les scripts porteurs du nonce charger leurs
+    // propres dépendances, ce dont le runtime Next.js a besoin.
+    ? `'self' 'nonce-${nonce}' 'strict-dynamic'${isDev ? " 'unsafe-eval'" : ''}`
+    : `'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`
+
+  return [
+    "default-src 'self'",
+    `script-src ${scriptSrc}`,
+    // Les styles restent en 'unsafe-inline' : Tailwind et les composants Radix
+    // posent des styles inline calculés au runtime, qu'un nonce ne couvre pas.
+    "style-src 'self' 'unsafe-inline'",
+    `img-src 'self' data: blob: ${SUPABASE_ORIGIN} https://lh3.googleusercontent.com`,
+    "font-src 'self'",
+    `connect-src 'self' ${SUPABASE_ORIGIN} wss://wjhuhaojygopjzqmdkqa.supabase.co https://openrouter.ai https://generativelanguage.googleapis.com ${SENTRY_INGEST}`,
+    `frame-src 'self' ${SUPABASE_ORIGIN}`,
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    // Bloque les plugins (Flash, Java…) : absent de la politique précédente.
+    "object-src 'none'",
+    ...(isDev ? [] : ['upgrade-insecure-requests']),
+  ].join('; ')
+}
+
+/** Les chemins authentifiés, tous rendus à la demande, reçoivent le nonce. */
+function needsNonce(pathname) {
+  return pathname.startsWith('/dashboard') || pathname.startsWith('/admin')
+}
+
+/** Pose la CSP sur une réponse — y compris les redirections, qu'on oublie facilement. */
+function withCsp(response, csp) {
+  response.headers.set('Content-Security-Policy', csp)
+  return response
+}
+
 // ── Main proxy ─────────────────────────────────────────────────────────────────
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl
+
+  const isDev = process.env.NODE_ENV !== 'production'
+  const nonce = needsNonce(pathname)
+    ? Buffer.from(crypto.randomUUID()).toString('base64')
+    : null
+  const csp = buildCsp({ nonce, isDev })
+
+  // Next.js lit le nonce dans l'en-tête CSP de la *requête* pour l'appliquer
+  // à ses propres balises ; l'en-tête de réponse est celui que le navigateur
+  // applique. Les deux sont donc nécessaires.
+  if (nonce) {
+    request.headers.set('x-nonce', nonce)
+    request.headers.set('Content-Security-Policy', csp)
+  }
 
   let supabaseResponse = NextResponse.next({ request })
   let user = null
@@ -64,7 +139,7 @@ export async function proxy(request) {
   if (isAdminRoute) {
     // Admin email check FIRST — if it's the real admin, let them through immediately
     if (user?.email === ADMIN_EMAIL) {
-      return supabaseResponse
+      return withCsp(supabaseResponse, csp)
     }
 
     // Not the admin — rate limit only non-admin IPs to avoid lockout of legitimate admin
@@ -76,7 +151,7 @@ export async function proxy(request) {
     isAdminRateLimited(ip) // record the failed attempt
 
     // Silent redirect — no indication that /admin exists
-    return NextResponse.redirect(new URL('/', request.url))
+    return withCsp(NextResponse.redirect(new URL('/', request.url)), csp)
   }
 
   // ── Standard auth protection ──────────────────────────────────────────────────
@@ -84,15 +159,15 @@ export async function proxy(request) {
 
   if (!user && pathname.startsWith('/dashboard')) {
     url.pathname = '/login'
-    return NextResponse.redirect(url)
+    return withCsp(NextResponse.redirect(url), csp)
   }
 
   if (user && pathname === '/login') {
     url.pathname = '/dashboard'
-    return NextResponse.redirect(url)
+    return withCsp(NextResponse.redirect(url), csp)
   }
 
-  return supabaseResponse
+  return withCsp(supabaseResponse, csp)
 }
 
 export const config = {

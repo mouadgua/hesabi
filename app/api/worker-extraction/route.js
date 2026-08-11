@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import { extractDocument } from '@/lib/extraction'
 import { classifyAndDetect } from '@/lib/classify'
 import { buildExtractionPrompt } from '@/utils/buildExtractionPrompt'
+import { alertExtractionFailed } from '@/lib/alerts'
 
 // Extracts the first valid JSON object or array from any AI response string.
 // Handles: raw JSON, ```json fences, prose + JSON, trailing commentary.
@@ -291,6 +292,7 @@ export async function POST(request) {
 
       } catch (err) {
         console.error(`[Worker] Échec document ${docId}:`, err.message)
+        alertExtractionFailed({ documentId: docId, cabinetId, reason: err.message })
         await prisma.document.update({
           where: { id: docId },
           data: { statut: 'REJETE', error_message: err.message },

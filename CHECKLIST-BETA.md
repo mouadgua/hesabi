@@ -120,10 +120,21 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
   Les pages de démonstration ajoutées par l'assistant (`app/sentry-example-page/`, `app/api/sentry-example-api/`) ont été supprimées : elles n'ont pas leur place en production. Vérifié absentes du build.
   À noter : le DSN est inscrit en dur dans les configs — c'est un point d'ingestion public, pas un secret.
 
-- [ ] **A2 — Aucune alerte sur le pipeline d'extraction**
-  Le circuit breaker s'ouvre, `ALL_PROVIDERS_FAILED` se déclenche, le cron récupère 40 documents bloqués — tout cela finit en `console.error` que personne ne lit. Correspond aux sections 1 et 2 de `checkliste_requirements.md`, marquées bloquantes.
-  · Fichiers : `lib/ai.js:235,265`, `app/api/cron/recovery/route.js:36`, `app/api/worker-extraction/route.js`
-  · Sévérité : **bloquant** · Effort : **2-3 h** · **[OUTIL EXTERNE REQUIS : Sentry ou webhook Slack]**
+- [x] ~~**A2 — Aucune alerte sur le pipeline d'extraction**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-pipeline-alerts`)
+  `lib/alerts.js` regroupe les alertes opérationnelles au lieu de les disperser dans le code. Quatre signaux, branchés sur les points de défaillance réels :
+  | Signal | Déclencheur | Niveau |
+  |---|---|---|
+  | Circuit ouvert | un provider IA franchit le seuil d'échecs (`lib/ai.js`) | warning |
+  | Chaîne épuisée | tous les providers ont échoué (`ALL_PROVIDERS_FAILED`, 2 emplacements) | error |
+  | Documents débloqués | le cron en récupère ≥ 5 — signe que le worker n'a pas terminé | warning, error à ≥ 20 |
+  | Échec d'extraction | motif inattendu (`app/api/worker-extraction`) | warning |
+  **Deux choix de conception** :
+  · **Anti-spam par regroupement** (5 min par clé) : un lot de 300 documents en échec produit **une** alerte, pas 300. Vérifié par test.
+  · **Les échecs métier attendus sont ignorés** — « Document non reconnu », « Fichier illisible », « aucune donnée pertinente » relèvent de la qualité du document fourni par l'utilisateur, pas d'un incident de plateforme. Les noyer dans les alertes les rendrait inutilisables.
+  Toutes les fonctions sont non-bloquantes : une panne d'alerting ne doit pas casser le pipeline qu'elle surveille (testé).
+  **Vérifié contre le vrai Sentry** via une sonde temporaire (créée, interrogée, supprimée) : les 4 signaux partent, les 2 cas devant rester silencieux le restent, et **`flushed: true`** — transmission effective.
+  **Bug attrapé au passage** : ma première version référençait `lastErr` hors de sa portée dans `lib/ai.js`. Les tests existants l'ont détecté immédiatement — corrigé par une variable dédiée à la dernière erreur de toute la chaîne.
+  12 tests ajoutés (`__tests__/lib/alerts.test.js`) — total **82**.
 
 - [ ] **A3 — Aucun monitoring de disponibilité**
   `/api/health` existe et est correct (retourne 503 si la DB tombe), mais **rien ne l'interroge**. Une panne totale reste invisible jusqu'à la plainte d'un cabinet.
@@ -262,7 +273,7 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 | ~~8~~ | ~~F1+F2~~ | ~~Validation des variables d'env au démarrage~~ | ~~45 min~~ | **✅ Fait 2026-08-10** |
 | ~~9~~ | ~~S5~~ | ~~Rate limiting sur l'authentification~~ | ~~1 h~~ | **✅ Fait 2026-08-10** |
 | ~~10~~ | ~~A1~~ | ~~Sentry opérationnel~~ | ~~1 h~~ | **✅ Fait 2026-08-10** |
-| 11 | A2 | Alertes pipeline d'extraction | 2-3 h | ❌ dépend de A1 |
+| ~~11~~ | ~~A2~~ | ~~Alertes pipeline d'extraction~~ | ~~2-3 h~~ | **✅ Fait 2026-08-10** |
 | 12 | A3 | Sonde de disponibilité | 20 min | ⏳ à confirmer |
 | 13 | T1 | Tests d'isolation multi-tenant | 3-4 h | ✅ |
 | 14 | F3 | Sauvegardes vérifiées et documentées | 1-2 h | ⏳ hors code |

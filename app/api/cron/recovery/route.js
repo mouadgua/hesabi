@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+import { alertStuckDocumentsRecovered } from '@/lib/alerts'
 
 // Called every 5 minutes by Vercel Cron (see vercel.json)
 // Passes EN_COURS_IA documents stuck for more than 10 minutes back to REJETE
@@ -41,6 +42,10 @@ export async function GET(request) {
   })
 
   console.log(`[cron/recovery] Recovered ${result.count} stuck document(s)`)
+
+  // Un ou deux documents, c'est le filet de sécurité qui fait son travail.
+  // Un lot signale autre chose : worker interrompu, ou plafond de 90 s atteint.
+  alertStuckDocumentsRecovered(result.count)
 
   return NextResponse.json({
     recovered: result.count,

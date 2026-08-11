@@ -218,12 +218,23 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
   · Fichiers : `app/`, `lib/` (53 occurrences)
   · Sévérité : important · Effort : **2-3 h**
 
-- [ ] **F5 — Le worker d'extraction ne tient pas la charge (Phase 3/4 jamais réalisée)**
-  `/api/worker-extraction` traite les documents dans une **boucle séquentielle unique** plafonnée à `maxDuration = 90`s. Un lot de 700 documents dépasse largement ce budget : l'invocation est tuée et les documents restants restent bloqués jusqu'au cron. Aucune file d'attente, aucun ordonnancement équitable entre cabinets, aucune limite de concurrence vis-à-vis de Gemini/Azure.
-  · Fichier : `app/api/worker-extraction/route.js:37,129`
-  · Sévérité : important · Effort : **1-2 jours**
-
----
+- [x] ~~**F5 — Le worker d'extraction ne tient pas la charge (Phase 3/4)**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-extraction-queue`)
+  Le worker traitait **tous** les documents d'un lot dans une seule invocation plafonnée à 90 s. À 2-5 s par document, un lot de 700 mourait vers le 35ᵉ : les autres restaient bloqués en `EN_COURS_IA` jusqu'au cron, qui les passait en `REJETE`. Le produit ne tenait donc pas sa promesse d'affiche — « Envoyez 100 factures d'un coup ».
+  **Le worker devient un répartiteur auto-relancé.** Les paramètres d'extraction (`lang`, `queued_by_user_id`, `queued_at`) migrent de l'appel HTTP vers le document lui-même : n'importe quelle invocation peut donc reprendre n'importe quel document.
+  | Mécanisme | Rôle |
+  |---|---|
+  | Lot borné (`BATCH_SIZE = 8`) | tient largement sous le plafond de durée |
+  | Budget de temps (60 s) | s'arrête avant la limite et **remet en file** ce qui n'a pas été traité, au lieu d'être interrompu au milieu d'un document |
+  | Auto-relance | tant qu'il reste des documents, l'invocation en déclenche une autre |
+  | Réservation atomique | `updateMany` conditionnel `A_EXTRAIRE → EN_COURS_IA` : deux répartiteurs ne peuvent pas prendre le même document |
+  | Verrou Redis | un seul répartiteur à la fois, sinon deux déclenchements rapprochés doubleraient la concurrence vis-à-vis de Gemini/Azure |
+  | Tour de rôle par cabinet | un cabinet déposant 700 documents ne repousse pas celui qui en dépose 3 |
+  **Vérifié en conditions réelles** :
+  · **20 documents, lots de 8** → première réponse `{processed: 8, remaining: 12}`, puis **file entièrement drainée** par auto-relance, sans intervention. Aucun document laissé bloqué.
+  · **Équité** : cabinet A dépose 30 documents, cabinet B en dépose 3 **après**. Le premier lot contient **5 A et 3 B** — le petit cabinet est servi dès le premier tour au lieu d'attendre la fin des 30.
+  · Un cabinet seul récupère tout le lot : aucun ralentissement artificiel.
+  La ré-extraction unitaire passe désormais par la **même** file, pour qu'aucun chemin n'échappe à la limite de concurrence.
+  Migration : `prisma/add_extraction_queue.sql` (appliquée en production, index `Document(statut, queued_at)` inclus).
 
 ## 🟢 PEUT ATTENDRE
 
@@ -298,6 +309,6 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 | 18 | A4 | Logs structurés | 2-3 h | ✅ |
 | ~~19~~ | ~~S8~~ | ~~CSP sans `unsafe-inline`~~ | ~~2-3 h~~ | **✅ Fait 2026-08-10** |
 | 20 | T5 | Tests E2E | 1 j | ✅ |
-| 21 | F5 | File d'attente d'extraction (Phase 3/4) | 1-2 j | ✅ |
+| ~~21~~ | ~~F5~~ | ~~File d'attente d'extraction (Phase 3/4)~~ | ~~1-2 j~~ | **✅ Fait 2026-08-10** |
 | 22 | T4 | Remonter la couverture à 70 % | continu | ✅ |
 | 23 | T6 | Tests de charge | 1 j | ✅ (k6 installé) |

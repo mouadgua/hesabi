@@ -83,9 +83,23 @@ export async function extractDocumentsAction(formData) {
     try {
         const dbTemplateId = (templateId === "NO_MODEL" || templateId === "DEFAULT_FACTURE") ? null : templateId
 
+        // Mise en file : les documents restent A_EXTRAIRE et portent désormais
+        // leurs propres paramètres d'extraction. Le répartiteur les reprendra
+        // par lots bornés, en se relançant tant qu'il en reste.
+        //
+        // Auparavant tout était marqué EN_COURS_IA d'emblée et envoyé en un
+        // seul appel : au-delà du plafond de 90 s, l'invocation mourait et les
+        // documents restants demeuraient bloqués jusqu'au cron de récupération.
         await prisma.document.updateMany({
             where: { id: { in: safeIds } },
-            data: { statut: 'EN_COURS_IA', template_id: dbTemplateId }
+            data: {
+                statut:            'A_EXTRAIRE',
+                template_id:       dbTemplateId,
+                lang,
+                queued_by_user_id: user.id,
+                queued_at:         new Date(),
+                error_message:     null,
+            }
         })
 
         const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
@@ -95,13 +109,7 @@ export async function extractDocumentsAction(formData) {
                 'Content-Type': 'application/json',
                 'x-worker-secret': process.env.WORKER_SECRET ?? '',
             },
-            body: JSON.stringify({
-                documentIds: safeIds,
-                templateId,
-                userId:    user.id,
-                cabinetId: utilisateur.cabinet_id,
-                lang,
-            }),
+            body: JSON.stringify({ queued: safeIds.length }),
         }).catch(err => console.error("Erreur lancement worker:", err))
 
     } catch (error) {
@@ -148,9 +156,17 @@ export async function reExtractSingleDocumentAction(formData) {
 
     const dbTemplateId = (templateId === "NO_MODEL" || templateId === "DEFAULT_FACTURE") ? null : templateId
 
+    // Même file que les lots : un document unique n'a pas de chemin privilégié,
+    // ce qui garantit qu'il est soumis à la même limite de concurrence.
     await prisma.document.update({
         where: { id: documentId },
-        data: { statut: 'EN_COURS_IA', template_id: dbTemplateId }
+        data: {
+            statut:            'A_EXTRAIRE',
+            template_id:       dbTemplateId,
+            queued_by_user_id: user.id,
+            queued_at:         new Date(),
+            error_message:     null,
+        }
     })
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
@@ -160,12 +176,7 @@ export async function reExtractSingleDocumentAction(formData) {
             'Content-Type': 'application/json',
             'x-worker-secret': process.env.WORKER_SECRET ?? '',
         },
-        body: JSON.stringify({
-            documentIds: [documentId],
-            templateId,
-            userId:    user.id,
-            cabinetId: utilisateur.cabinet_id,
-        }),
+        body: JSON.stringify({ queued: 1 }),
     }).catch(err => console.error("Erreur worker:", err))
 
     revalidatePath(`/dashboard/verification/${documentId}`)

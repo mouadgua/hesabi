@@ -114,7 +114,12 @@
 3. Dans `/admin/users` → cabinet cible → "Modifier le plan" → "Hybride Azure OCR + Gemini"
 4. Lancer une extraction — le worker passe par Azure OCR d'abord puis Gemini en mode texte
 
-**Phase 3/4 (à faire)** : file d'attente asynchrone pour les documents longs
+**Phase 3/4 — File d'attente asynchrone : terminé (2026-08-10)**
+- Le worker devient un **répartiteur auto-relancé** : lots de 8 documents, budget de 60 s, relance tant qu'il en reste. Auparavant tout un lot passait dans une seule invocation plafonnée à 90 s — au-delà de ~35 documents, le reste finissait en `REJETE` via le cron.
+- Paramètres d'extraction portés par le document (`lang`, `queued_by_user_id`, `queued_at`) : n'importe quelle invocation peut reprendre n'importe quel document
+- **Équité entre cabinets** : sélection par tour de rôle — 30 documents d'un cabinet ne repoussent pas les 3 d'un autre (vérifié : premier lot = 5 + 3)
+- Réservation atomique (`updateMany` conditionnel) + verrou Redis : pas de double traitement, concurrence maîtrisée vis-à-vis de Gemini/Azure
+- Migration : `prisma/add_extraction_queue.sql`
 **Phase 4/4 (à faire)** : fallback Azure → Gemini vision si Azure échoue
 
 ### Learning loop

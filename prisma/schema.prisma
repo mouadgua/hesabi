@@ -124,6 +124,11 @@ model Document {
   document_language_detected  String?        // "fr" | "ar" | "en" | "es" | "other"
   file_hash                   String?        // SHA-256 hex du fichier brut — détection de doublons
   error_message               String?        @db.Text
+  // File d'attente d'extraction : paramètres portés par le document lui-même,
+  // pour qu'un worker puisse le reprendre sans dépendre de l'appel d'origine.
+  lang                        String?        @default("fr")  // "fr" | "en"
+  queued_by_user_id           String?        @db.Uuid        // learning loop : préférences de l'utilisateur
+  queued_at                   DateTime?                      // ordre d'arrivée, pour l'équité entre cabinets
   // AI tracking fields
   ai_provider                 String?        // gemini-pdf | claude-haiku | gpt-4o | gemini-flash | qwen
   processing_ms               Int?           // wall-clock extraction time
@@ -141,6 +146,7 @@ model Document {
   compte_comptable   DocumentCompteComptable?
 
   @@index([client_id, statut])
+  @@index([statut, queued_at])
   @@index([statut, updatedAt])
   @@index([template_id])
   @@index([dossier_id])

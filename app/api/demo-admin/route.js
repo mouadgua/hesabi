@@ -12,6 +12,6 @@ export async function GET(request) {
 
   return NextResponse.json({
     demo:    { stats: getDemoStats(), log: getDemoLog() },
-    ai:      { circuit: getAICircuitStatus(), cache: getAICacheStats() },
+    ai:      { circuit: await getAICircuitStatus(), cache: getAICacheStats() },
   })
 }

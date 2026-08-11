@@ -94,10 +94,13 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
 
 ### Tests
 
-- [ ] **T1 — Aucun test d'isolation multi-tenant**
-  Rien dans `__tests__/` ne vérifie qu'un cabinet ne peut pas atteindre les données d'un autre. **C'est précisément ce qui a laissé passer S1, S2 et S3.** Sans ce filet, chaque nouvelle action serveur peut réintroduire une fuite.
-  · Fichier : `__tests__/` (à créer)
-  · Sévérité : **bloquant** · Effort : **3-4 h**
+- [x] ~~**T1 — Aucun test d'isolation multi-tenant**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-tenant-isolation`)
+  `__tests__/security/tenantIsolation.test.js` — plutôt que de tester quelques cas choisis, le test **balaye tout le code serveur** (~50 sites d'appel Prisma sur 8 modèles appartenant à un cabinet) et exige que chacun soit scopé.
+  **Analyse à l'échelle de la fonction**, parce que le pattern sûr et majoritaire est « vérifier puis agir » : une première requête scopée confirme l'appartenance, les opérations suivantes se font par id. Une analyse appel par appel produisait 17 faux positifs sur ce pattern légitime.
+  **Exceptions justifiées** (`ALLOWLIST`) : cron système, console et routes d'administration, démo publique, plan CGNC partagé. Chaque entrée doit porter sa raison — un test vérifie qu'aucune justification n'est vide.
+  **Le garde-fou a été validé en réintroduisant réellement la faille S1** : suppression de modèle par id sans scope. Deux tests tombent immédiatement, en nommant fichier, ligne et fonction — `deleteTemplateAction() → prisma.templateExtraction.delete({ where: { id: templateId } })`. Fichier restauré à l'identique ensuite.
+  S'y ajoutent 4 tests de non-régression ciblant précisément les failles corrigées (S1, S2, S3, S9), pour qu'elles ne puissent pas revenir discrètement.
+  7 tests ajoutés — total **89**.
 
 - [x] ~~**T2 — Le script `npm test` n'existe pas**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-npm-test`)
   Ajout de `test` (`jest`), `test:watch` et `test:coverage` dans `package.json`.
@@ -275,7 +278,7 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 | ~~10~~ | ~~A1~~ | ~~Sentry opérationnel~~ | ~~1 h~~ | **✅ Fait 2026-08-10** |
 | ~~11~~ | ~~A2~~ | ~~Alertes pipeline d'extraction~~ | ~~2-3 h~~ | **✅ Fait 2026-08-10** |
 | 12 | A3 | Sonde de disponibilité | 20 min | ⏳ à confirmer |
-| 13 | T1 | Tests d'isolation multi-tenant | 3-4 h | ✅ |
+| ~~13~~ | ~~T1~~ | ~~Tests d'isolation multi-tenant~~ | ~~3-4 h~~ | **✅ Fait 2026-08-10** |
 | 14 | F3 | Sauvegardes vérifiées et documentées | 1-2 h | ⏳ hors code |
 | ~~15~~ | ~~S7~~ | ~~Durcissement des clés bêta~~ | ~~45 min~~ | **✅ Fait 2026-08-10** |
 | ~~16~~ | ~~S9~~ | ~~Appartenance du `document_id` feedback~~ | ~~15 min~~ | **✅ Fait 2026-08-10** |

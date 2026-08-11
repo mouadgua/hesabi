@@ -179,10 +179,18 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
   **Atomicité vérifiée** : 5 réservations simultanées sur une clé `max_uses: 1` → **une seule** réussit, `use_count` final = 1.
   Comptes et clés de test entièrement supprimés (Supabase Auth + base).
 
-- [ ] **S8 — CSP autorise `'unsafe-inline'` sur les scripts**
-  `script-src 'self' 'unsafe-inline'` annule une grande partie de la protection XSS de la CSP.
-  · Fichier : `next.config.mjs:18`
-  · Sévérité : important · Effort : **2-3 h** (migration vers nonces)
+- [x] ~~**S8 — CSP autorise `'unsafe-inline'` sur les scripts**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-csp`)
+  **Deux politiques selon le chemin**, parce que les contraintes diffèrent. La doc Next.js embarquée est formelle : une CSP à nonce impose le **rendu à la demande de toutes les pages** — fin de la génération statique, fin du cache CDN, coûts d'hébergement en hausse.
+  Or les 22 routes `/dashboard` et `/admin` — celles qui portent les données comptables — sont **déjà dynamiques**. Le nonce n'y coûte donc rien :
+  | Chemin | Politique | Rendu |
+  |---|---|---|
+  | `/dashboard`, `/admin` | `'nonce-…' 'strict-dynamic'`, **sans `unsafe-inline`** | dynamique (inchangé) |
+  | Pages publiques | `'unsafe-inline'` conservé | **statique préservé**, cache CDN intact |
+  Un nonce sur une page statique serait de toute façon inopérant : l'en-tête porterait la valeur de la requête courante pendant que le HTML en cache porterait celle d'une requête antérieure — tous les scripts seraient bloqués.
+  **Ajouts sur les deux politiques** : `object-src 'none'` (absent auparavant — bloque les plugins) et `upgrade-insecure-requests`. Le domaine d'ingestion Sentry est ajouté à `connect-src`, le tunnel `/monitoring` pouvant échouer.
+  **Source unique** : la CSP quitte `next.config.mjs` pour `proxy.js`. Deux en-têtes CSP concurrents auraient été appliqués tous les deux par le navigateur, rendant le comportement illisible. Posée sur **toutes** les sorties du proxy, redirections comprises.
+  **Vérifié sur build de production** : 0 violation sur les pages publiques, application authentifiée pleinement fonctionnelle (UI rendue, React hydraté), 8 pages statiques préservées.
+  **Compromis assumé** : le script inline de `next-themes` est bloqué sur les pages authentifiées — c'est le seul. Tous les scripts Next.js s'exécutent (Next applique le nonce aux siens automatiquement). Conséquence : un bref clignotement de thème possible avant hydratation, le thème étant ensuite appliqué normalement. Épingler le hash du script aurait échangé ce défaut cosmétique, qui se répare seul, contre une dégradation silencieuse à chaque mise à jour de `next-themes`.
 
 - [x] ~~**S9 — Aucune validation d'appartenance sur `document_id` du feedback**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-betakey-feedback`)
   L'identifiant est désormais vérifié comme appartenant au cabinet de l'appelant avant d'être stocké. S'il ne l'est pas, il est **ignoré** (mis à `null`) plutôt que de faire échouer la requête : c'est une donnée analytique, et perdre le retour utilisateur serait pire que perdre la référence au document.
@@ -288,7 +296,7 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 | ~~16~~ | ~~S9~~ | ~~Appartenance du `document_id` feedback~~ | ~~15 min~~ | **✅ Fait 2026-08-10** |
 | ~~17~~ | ~~S10~~ | ~~Rate limiting + circuit breaker distribués~~ | ~~2-3 h~~ | **✅ Fait 2026-08-10** |
 | 18 | A4 | Logs structurés | 2-3 h | ✅ |
-| 19 | S8 | CSP sans `unsafe-inline` | 2-3 h | ✅ |
+| ~~19~~ | ~~S8~~ | ~~CSP sans `unsafe-inline`~~ | ~~2-3 h~~ | **✅ Fait 2026-08-10** |
 | 20 | T5 | Tests E2E | 1 j | ✅ |
 | 21 | F5 | File d'attente d'extraction (Phase 3/4) | 1-2 j | ✅ |
 | 22 | T4 | Remonter la couverture à 70 % | continu | ✅ |

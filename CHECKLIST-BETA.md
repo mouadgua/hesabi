@@ -187,10 +187,14 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
 - [x] ~~**S9 — Aucune validation d'appartenance sur `document_id` du feedback**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-betakey-feedback`)
   L'identifiant est désormais vérifié comme appartenant au cabinet de l'appelant avant d'être stocké. S'il ne l'est pas, il est **ignoré** (mis à `null`) plutôt que de faire échouer la requête : c'est une donnée analytique, et perdre le retour utilisateur serait pire que perdre la référence au document.
 
-- [ ] **S10 — Rate limiting et circuit breaker non distribués**
-  `lib/rateLimiter.js`, le rate limit admin de `proxy.js`, le circuit breaker et le cache IA de `lib/ai.js` vivent tous dans des `Map` en mémoire. Sur Vercel multi-instances, chaque instance a son propre état → limites contournables et circuit breaker inefficace.
-  · Fichiers : `lib/rateLimiter.js:6-12`, `proxy.js:9`, `lib/ai.js:35-38`
-  · Sévérité : important · Effort : **2-3 h** · **[OUTIL EXTERNE REQUIS : Upstash Redis]**
+- [x] ~~**S10 — Rate limiting et circuit breaker non distribués**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-auth-ratelimit` + `feature/checklist-distributed-circuit`)
+  **Rate limiting** : traité avec S5 — compteurs dans Upstash, partagés entre instances.
+  **Circuit breaker IA** : l'état passe dans Redis (`lib/ai.js`). En mémoire, chaque instance Vercel avait sa propre vision — un provider en panne était écarté sur l'instance qui l'avait constaté, pendant que les autres continuaient de l'appeler. Le disjoncteur ne disjonctait qu'à un endroit sur N.
+  `lib/redis.js` extrait l'accès Upstash partagé (REST, sans SDK), avec **délai d'attente de 3 s** : un Redis lent ne doit jamais retarder une extraction. Repli mémoire conservé si Redis est absent ou injoignable — mieux vaut un circuit breaker local qu'aucun.
+  `getAICircuitStatus()` interroge Redis et fait l'**union** des providers actifs et de ceux ayant un état enregistré : se limiter à la liste courante masquerait un circuit encore ouvert sur un modèle retiré de la chaîne.
+  **Le cache de réponses reste volontairement local** : son absence est sans conséquence (un miss relance simplement l'appel), et faire transiter des réponses de plusieurs dizaines de Ko par Redis à chaque extraction coûterait plus qu'il ne rapporterait. `getAICacheStats()` annonce désormais explicitement `scope: 'instance'`.
+  **Vérifié entre deux processus Node distincts** — donc sans mémoire commune : le premier enregistre 3 échecs, le second lit le circuit **ouvert**. TTL de 300 s confirmé.
+  **Effet de bord corrigé** : les commandes Redis passant par `fetch`, elles étaient comptabilisées par les tests qui espionnent `fetch`. Upstash est désormais explicitement désactivé dans `ai.test.js` — les tests redeviennent hermétiques et couvrent le chemin de repli.
 
 - [ ] **T4 — Couverture réelle 44,6 % contre un seuil de 70 %**
   `npx jest --coverage` **échoue déjà** (lignes 45,49 %, fonctions 38,63 %), mais rien n'exécute cette commande. La couverture ne mesure que `lib/` et `utils/` : `app/` (toutes les routes API et Server Actions) est à **0 %**.
@@ -282,7 +286,7 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 | 14 | F3 | Sauvegardes vérifiées et documentées | 1-2 h | ⏳ hors code |
 | ~~15~~ | ~~S7~~ | ~~Durcissement des clés bêta~~ | ~~45 min~~ | **✅ Fait 2026-08-10** |
 | ~~16~~ | ~~S9~~ | ~~Appartenance du `document_id` feedback~~ | ~~15 min~~ | **✅ Fait 2026-08-10** |
-| 17 | S10 | Rate limiting distribué | 2-3 h | ✅ (Upstash dispo) |
+| ~~17~~ | ~~S10~~ | ~~Rate limiting + circuit breaker distribués~~ | ~~2-3 h~~ | **✅ Fait 2026-08-10** |
 | 18 | A4 | Logs structurés | 2-3 h | ✅ |
 | 19 | S8 | CSP sans `unsafe-inline` | 2-3 h | ✅ |
 | 20 | T5 | Tests E2E | 1 j | ✅ |

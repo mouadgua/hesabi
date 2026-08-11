@@ -55,6 +55,12 @@ beforeAll(async () => {
   process.env.OPENROUTER_API_KEY = 'test-key'
   process.env.GEMINI_API_KEY     = 'test-gemini-key'
 
+  // Upstash désactivé : ces tests portent sur la logique du circuit breaker,
+  // pas sur Redis. Les laisser actifs ferait passer les commandes Redis par le
+  // `fetch` espionné et fausserait les comptages d'appels réseau.
+  delete process.env.UPSTASH_REDIS_REST_URL
+  delete process.env.UPSTASH_REDIS_REST_TOKEN
+
   if (!global.__ai_circuit) global.__ai_circuit = {}
   if (!global.__ai_cache)   global.__ai_cache   = new Map()
 
@@ -193,9 +199,9 @@ describe('Circuit breaker', () => {
     expect(body.model).not.toBe(PROVIDERS[0])
   })
 
-  test('getAICircuitStatus reflects manually set state', () => {
+  test('getAICircuitStatus reflects manually set state', async () => {
     circuitRef[PROVIDERS[0]] = { failures: 3, openedAt: Date.now() }
-    const status = getAICircuitStatus()
+    const status = await getAICircuitStatus()
     expect(status[PROVIDERS[0]]).toMatchObject({ failures: 3, open: true })
     expect(typeof status[PROVIDERS[0]].opensAt).toBe('string')
   })
@@ -209,7 +215,7 @@ describe('Circuit breaker', () => {
     await jest.runAllTimersAsync()
     await expectation
 
-    const status = getAICircuitStatus()
+    const status = await getAICircuitStatus()
     const hasFailures = Object.values(status).some(s => s.failures >= 1)
     expect(hasFailures).toBe(true)
   }, 30_000)

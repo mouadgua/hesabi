@@ -41,7 +41,14 @@ function isAdminRateLimited(ip) {
 // reconstruire les traces d'erreur serveur dans le navigateur.
 
 const SUPABASE_ORIGIN = 'https://wjhuhaojygopjzqmdkqa.supabase.co'
-const SENTRY_INGEST   = 'https://o4511886554693632.ingest.de.sentry.io'
+// Origine d'ingestion Sentry, dérivée du DSN plutôt que recopiée : si le DSN
+// change d'environnement, la CSP suit sans intervention. L'envoi passe
+// normalement par le tunnel /monitoring (même origine), ceci couvre le cas où
+// le tunnel échoue et où le SDK repart en direct.
+const SENTRY_INGEST = (() => {
+  try { return new URL(process.env.NEXT_PUBLIC_SENTRY_DSN ?? '').origin }
+  catch { return '' }
+})()
 
 function buildCsp({ nonce, isDev }) {
   const scriptSrc = nonce
@@ -58,7 +65,7 @@ function buildCsp({ nonce, isDev }) {
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' data: blob: ${SUPABASE_ORIGIN} https://lh3.googleusercontent.com`,
     "font-src 'self'",
-    `connect-src 'self' ${SUPABASE_ORIGIN} wss://wjhuhaojygopjzqmdkqa.supabase.co https://openrouter.ai https://generativelanguage.googleapis.com ${SENTRY_INGEST}`,
+    `connect-src 'self' ${SUPABASE_ORIGIN} wss://wjhuhaojygopjzqmdkqa.supabase.co https://openrouter.ai https://generativelanguage.googleapis.com${SENTRY_INGEST ? ' ' + SENTRY_INGEST : ''}`,
     `frame-src 'self' ${SUPABASE_ORIGIN}`,
     "frame-ancestors 'none'",
     "base-uri 'self'",

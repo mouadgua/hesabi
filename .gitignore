@@ -44,3 +44,24 @@ next-env.d.ts
 
 # Sentry Config File
 .env.sentry-build-plugin
+
+# ── Outillage IA local ────────────────────────────────────────────────────────
+# Agents, skills et commandes propres au poste de travail. Sans effet sur le
+# build ou l'exécution : le dépôt distant ne garde que ce qui fait tourner
+# l'application dans le cloud.
+.claude/
+.claude-flow/
+.swarm/
+.mcp.json
+CLAUDE.md
+AGENTS.md
+
+# ── Documentation de travail ──────────────────────────────────────────────────
+# Suivi d'avancement, audits et checklists : utiles en local, inutiles au
+# déploiement. Ils restent sur le poste, simplement plus versionnés.
+AUDIT.md
+BETA_KEYS.md
+CHECKLIST-BETA.md
+FONCTIONNALITES.md
+avancement.md
+checkliste_requirements.md

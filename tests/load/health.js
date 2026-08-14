@@ -43,7 +43,10 @@ export const options = {
   },
 }
 
-export default function () {
+// Point d'entrée k6 : appelé une fois par itération et par utilisateur virtuel.
+// k6 impose un export par défaut ; il est nommé pour rester lisible dans les
+// traces et satisfaire la règle de lint sur les fonctions anonymes exportées.
+export default function sondeSante() {
   const res = http.get(`${BASE_URL}/api/health`, { tags: { name: 'health' } })
 
   check(res, {

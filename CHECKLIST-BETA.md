@@ -245,7 +245,19 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
 
 ## 🟢 PEUT ATTENDRE
 
-- [ ] **T6 — Aucun test de charge** — comportement inconnu au-delà de quelques utilisateurs simultanés. Effort : 1 journée · **[OUTIL EXTERNE REQUIS : k6 / Artillery]**
+- [x] ~~**T6 — Aucun test de charge**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-load-tests`)
+  Deux outils pour deux questions distinctes. k6 sait marteler un endpoint ; « la file se draine-t-elle sans laisser personne bloqué ? » demande d'ensemencer la base et d'observer les statuts dans le temps — d'où un second script.
+  | Fichier | Question | Résultat |
+  |---|---|---|
+  | `tests/load/health.js` (k6) | tenue en concurrence HTTP | 3 623 requêtes, pic à 60 utilisateurs, **0 % d'échec** |
+  | `tests/load/queue-drain.mjs` | la file se vide-t-elle intégralement ? | **50/50 traités, 0 bloqué**, 56 s |
+  | idem `--concurrent` | le verrou tient-il ? | **1 répartiteur actif, 4 écartés** — file drainée |
+  **Sans risque** : les documents de test pointent vers des fichiers de stockage inexistants, donc chaque extraction échoue immédiatement. On éprouve l'ordonnancement, la réservation atomique et l'auto-relance **sans consommer un seul appel IA** ni toucher aux documents réels. Nettoyage systématique, y compris en cas d'échec. `queue-drain.mjs` sort en code 1 si un document reste bloqué — utilisable comme garde-fou.
+  **Constat mesuré** : la latence p95 (972 ms) est à **99 % passée en base** (967 ms) — le code de la route est essentiellement gratuit. En isolant par niveau de concurrence : 299 ms à 1 utilisateur, stable jusqu'à 20, puis **1016 ms à 60** — une mise en file d'attente sur le pool de connexions.
+  **Interprétation honnête** : le plancher de ~300 ms est de l'aller-retour réseau poste de travail → Supabase Paris, pas une caractéristique de production. **Les valeurs absolues d'un lancement local ne disent rien de la production** ; seule la dégradation relative (×3 entre 20 et 60) est lisible. Les seuils restent calibrés pour un déploiement co-localisé — les assouplir pour faire passer un lancement local au vert les rendrait inutiles là où ils comptent.
+  **Point de configuration relevé, non modifié** : `DATABASE_URL` utilise bien le pooler pgbouncer, mais **aucune `connection_limit` n'est fixée**. Prisma retombe sur `cœurs × 2 + 1` par instance ; en serverless, chaque instance ouvre son propre pool et le nombre d'instances multiplie la charge sur le pooler. C'est un paramètre de production — laissé à ta décision plutôt que changé silencieusement.
+  Bug corrigé au passage : k6 ne calcule pas `p(99)` par défaut, il remontait donc **0** — une latence de queue de distribution en apparence parfaite. Corrigé par `summaryTrendStats`.
+
 - [ ] **A5 — `/api/demo-admin` expose un état par instance** — le circuit et le cache retournés ne reflètent qu'une seule instance Vercel, donnant une vision trompeuse. Résolu par S10. Effort : inclus dans S10.
 - [ ] **S11 — `dangerouslySetInnerHTML` dans `components/ui/chart.jsx:72`** — composant shadcn standard qui injecte des variables CSS de thème, non alimenté par des données utilisateur. À ne pas modifier sans raison, mais à connaître.
 
@@ -318,4 +330,4 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 | 20 | T5 | Tests E2E | 1 j | ✅ |
 | ~~21~~ | ~~F5~~ | ~~File d'attente d'extraction (Phase 3/4)~~ | ~~1-2 j~~ | **✅ Fait 2026-08-10** |
 | 22 | T4 | Remonter la couverture à 70 % | continu | ✅ |
-| 23 | T6 | Tests de charge | 1 j | ✅ (k6 installé) |
+| ~~23~~ | ~~T6~~ | ~~Tests de charge~~ | ~~1 j~~ | **✅ Fait 2026-08-10** |

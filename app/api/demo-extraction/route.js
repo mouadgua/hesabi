@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server'
-import { aiExtract } from '@/lib/ai'
+// Gemini et rien d'autre : la démo publique ne doit jamais atteindre OpenRouter.
+// L'import direct de ce module est ce qui rend la règle vérifiable — passer par
+// l'aiguillage partagé faisait basculer les images sur la chaîne payante.
+import { geminiExtract } from '@/lib/gemini'
+import { logger } from '@/lib/logger'
 import { sanitizeEmail, validateDemoFile, validateFileBytes } from '@/lib/sanitize'
 import { checkDemoRateLimit, recordDemoRequest } from '@/lib/rateLimiter'
 import prisma from '@/lib/prisma'
@@ -138,7 +142,7 @@ export async function POST(request) {
     let docType = 'autre'
     let confidence = 0.5
     try {
-      const { content: classRaw } = await aiExtract(CLASSIFY_PROMPT, mimeType, fileData, { maxTokens: 150, useCache: true })
+      const { content: classRaw } = await geminiExtract(CLASSIFY_PROMPT, mimeType, fileData, { maxTokens: 150 })
       const parsed = JSON.parse(classRaw.replace(/```json/g, '').replace(/```/g, '').trim())
       if (VALID_TYPES.includes(parsed.type)) {
         docType = parsed.type
@@ -150,17 +154,25 @@ export async function POST(request) {
 
     // Step 2: extract with selected fields
     const extractPrompt = buildPrompt(docType, cleanFields)
+
+    // L'appel et l'analyse de la réponse sont séparés pour que les deux échecs
+    // ne se confondent pas : Gemini indisponible n'est pas la même chose qu'un
+    // document illisible, et l'utilisateur n'a pas la même action à mener.
+    let extractRaw
+    try {
+      ;({ content: extractRaw } = await geminiExtract(extractPrompt, mimeType, fileData, { maxTokens: 3000 }))
+    } catch (err) {
+      logger.warn('Démo : Gemini indisponible', { raison: err.message })
+      return NextResponse.json(
+        { error: "Le service est temporairement surchargé. Réessayez dans quelques minutes." },
+        { status: 503 }
+      )
+    }
+
     let extractedData
     try {
-      const { content: extractRaw } = await aiExtract(extractPrompt, mimeType, fileData, { maxTokens: 3000, useCache: false })
       extractedData = JSON.parse(extractRaw.replace(/```json/g, '').replace(/```/g, '').trim())
-    } catch (err) {
-      if (err.message === 'ALL_PROVIDERS_FAILED') {
-        return NextResponse.json(
-          { error: "Le service est temporairement surchargé. Réessayez dans quelques minutes." },
-          { status: 503 }
-        )
-      }
+    } catch {
       return NextResponse.json(
         { error: "L'IA n'a pas pu analyser ce document. Vérifiez que le fichier est lisible." },
         { status: 422 }

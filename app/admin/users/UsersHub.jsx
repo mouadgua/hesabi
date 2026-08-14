@@ -240,13 +240,20 @@ function PlanModal({ cabinet, open, onClose, onRefresh }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="gemini">Gemini (défaut)</SelectItem>
-                <SelectItem value="hybrid_azure">Hybride Azure OCR + Gemini</SelectItem>
+                <SelectItem value="azure">Azure OCR + modèle gratuit (défaut)</SelectItem>
+                <SelectItem value="hybrid_azure">Azure hybride — texte brut</SelectItem>
+                <SelectItem value="gemini">Gemini seul — repli</SelectItem>
               </SelectContent>
             </Select>
-            {exMethod === 'hybrid_azure' && (
+            {(exMethod === 'azure' || exMethod === 'hybrid_azure') && (
               <p className="text-[11px] text-amber-600 dark:text-amber-400">
                 Azure OCR requis — assure-toi que AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT et KEY sont configurés.
+                Facturation à la page.
+              </p>
+            )}
+            {exMethod === 'gemini' && (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Repli sans Azure. À n&apos;utiliser que si Azure est indisponible.
               </p>
             )}
           </div>

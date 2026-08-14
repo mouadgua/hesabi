@@ -52,8 +52,11 @@ export async function updateCabinetPlanAction(formData) {
   const planStatus       = formData.get('plan_status')      || 'TRIAL'
   const creditsLimit     = parseInt(formData.get('credits_limit') || '15', 10)
   const credits          = parseInt(formData.get('credits')       || '15', 10)
-  const rawMethod        = formData.get('extraction_method') ?? 'gemini'
-  const extractionMethod = ['gemini', 'hybrid_azure'].includes(rawMethod) ? rawMethod : 'gemini'
+  // 'azure' est la voie principale : Azure lit le document, un modèle gratuit le
+  // structure. Elle était implémentée mais absente de cette liste, donc
+  // inatteignable — aucun cabinet ne pouvait y être basculé.
+  const rawMethod        = formData.get('extraction_method') ?? 'azure'
+  const extractionMethod = ['azure', 'hybrid_azure', 'gemini'].includes(rawMethod) ? rawMethod : 'azure'
   const ip               = await getIp()
 
   if (!cabinetId) throw new Error('cabinet_id manquant')

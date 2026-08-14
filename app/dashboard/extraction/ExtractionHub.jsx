@@ -132,6 +132,14 @@ export default function ExtractionHub({
 }) {
   const router = useRouter()
   const [docs, setDocs] = useState(initialDocuments)
+
+  // L'abonnement temps réel ne doit être ouvert qu'une fois : le faire dépendre
+  // de la liste rouvrirait le canal Supabase à chaque mise à jour de document.
+  // Ce ref donne au gestionnaire la liste courante sans créer cette dépendance
+  // — il lisait jusqu'ici `initialDocuments`, figé au montage, et ne retrouvait
+  // donc pas le nom d'un fichier ajouté pendant la session.
+  const docsRef = useRef(docs)
+  useEffect(() => { docsRef.current = docs }, [docs])
   const [credits, setCredits] = useState(initialCredits)
   const [selectedDocIds, setSelectedDocIds] = useState(new Set())
   const [templateId, setTemplateId] = useState('NO_MODEL')
@@ -172,7 +180,11 @@ export default function ExtractionHub({
       router.replace(qs ? `/dashboard/extraction?${qs}` : '/dashboard/extraction', { scroll: false })
     }, 300)
     return () => clearTimeout(timer)
-  }, [query, statutFilter, typeFilter])
+    // `activeClient` est une prop dérivée de l'URL par le composant serveur :
+    // la réécrire ici reproduit la valeur d'où elle vient, sans boucle. Sans
+    // cette dépendance, changer de client laissait l'URL sur l'ancien — un
+    // rechargement ou un lien partagé perdait la sélection.
+  }, [query, statutFilter, typeFilter, activeClient?.id, router])
 
   // ── iOS / mobile detection (folder upload not supported on iOS) ───────────
   useEffect(() => {
@@ -210,7 +222,7 @@ export default function ExtractionHub({
         if (updated.statut === 'REJETE') {
           const code = getAIErrorCode(updated.error_message)
           if (code) {
-            const doc = initialDocuments.find(d => d.id === updated.id)
+            const doc = docsRef.current.find(d => d.id === updated.id)
             setAiError({ code, filename: doc?.nom_fichier ?? updated.nom_fichier, docId: updated.id })
           }
         }
@@ -228,7 +240,7 @@ export default function ExtractionHub({
       startTransition(() => router.refresh())
     }, 4000)
     return () => clearInterval(timer)
-  }, [docs])
+  }, [docs, router])
 
   // ── File validation (extension + client-side corruption checks) ──────────
   // Runs all checks concurrently — these are local/in-memory operations

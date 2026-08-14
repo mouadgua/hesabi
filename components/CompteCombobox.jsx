@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect, useMemo } from "react"
+import { useState, useRef, useEffect, useMemo, useId } from "react"
 import { CheckIcon, ChevronsUpDownIcon, SparklesIcon, SearchIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
@@ -33,6 +33,11 @@ export default function CompteCombobox({
   const [open,   setOpen]   = useState(false)
   const [search, setSearch] = useState('')
   const inputRef = useRef(null)
+
+  // Relie le déclencheur à sa liste (aria-controls). Sans ce lien, un lecteur
+  // d'écran annonce « liste déroulante » sans jamais pouvoir désigner la liste
+  // qu'elle ouvre : l'état est lisible, la cible ne l'est pas.
+  const listboxId = useId()
 
   // Focus search input whenever the popover opens
   useEffect(() => {
@@ -73,6 +78,7 @@ export default function CompteCombobox({
           type="button"
           role="combobox"
           aria-expanded={open}
+          aria-controls={listboxId}
           aria-haspopup="listbox"
           disabled={disabled}
           className={cn(
@@ -118,7 +124,7 @@ export default function CompteCombobox({
           </div>
         </div>
 
-        <div className="max-h-64 overflow-y-auto" role="listbox">
+        <div id={listboxId} className="max-h-64 overflow-y-auto" role="listbox">
           {/* Suggestion */}
           {suggestionId && !search && (() => {
             const sug = comptes.find(c => c.id === suggestionId)

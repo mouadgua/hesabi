@@ -6,6 +6,7 @@ import { classifyAndDetect } from '@/lib/classify'
 import { buildExtractionPrompt } from '@/utils/buildExtractionPrompt'
 import { alertExtractionFailed } from '@/lib/alerts'
 import { redisCommand, isRedisConfigured } from '@/lib/redis'
+import { logger, withLogContext } from '@/lib/logger'
 
 // Extracts the first valid JSON object or array from any AI response string.
 // Handles: raw JSON, ```json fences, prose + JSON, trailing commentary.
@@ -63,7 +64,7 @@ async function acquireDispatchLock() {
     const res = await redisCommand(['SET', DISPATCH_LOCK_KEY, String(Date.now()), 'NX', 'EX', String(DISPATCH_LOCK_TTL)])
     return res === 'OK'
   } catch (err) {
-    console.warn(`[Worker] Verrou indisponible (${err.message}) — on poursuit`)
+    logger.warn('Verrou de répartition indisponible — on poursuit', { raison: err.message })
     return true
   }
 }
@@ -84,7 +85,7 @@ function kickDispatcher() {
       'x-worker-secret': process.env.WORKER_SECRET ?? '',
     },
     body: JSON.stringify({ chained: true }),
-  }).catch(err => console.error('[Worker] Relance impossible :', err.message))
+  }).catch(err => logger.exception('Relance du répartiteur impossible', err))
 }
 
 /** Méthode d'extraction du cabinet, avec repli si la migration n'est pas passée. */
@@ -147,7 +148,7 @@ async function processDocument(docId, { cabinetId, templateId, userId, lang, ext
         where: { id: docId, client: { cabinet_id: cabinetId } },
       })
       if (!document) {
-        console.warn(`[Worker] Document ${docId} introuvable ou accès refusé`)
+        logger.warn('Document introuvable ou accès refusé')
         return
       }
 
@@ -171,7 +172,7 @@ async function processDocument(docId, { cabinetId, templateId, userId, lang, ext
           confidence: document.document_type_confidence,
           fournisseur: document.fournisseur_detecte,
         }
-        console.log(`[Worker] Classification pré-existante: ${classification.type} (IA skipped)`)
+        logger.info('Classification déjà présente — appel IA évité', { type: classification.type })
       } else {
         const result = await classifyAndDetect(base64, mimeType)
         classification = result ?? { type: 'autre', confidence: 0.5, fournisseur: null }
@@ -258,7 +259,7 @@ async function processDocument(docId, { cabinetId, templateId, userId, lang, ext
       // If parsing failed AND the result came from cache, the cache may hold a
       // previously bad response. Retry once with a fresh AI call.
       if (extractedData === null && aiProvider === 'cache') {
-        console.warn(`[Worker] Cache hit but JSON parse failed for ${docId} — retrying fresh`)
+        logger.warn('Réponse en cache illisible — nouvel appel sans cache')
         try {
           const fresh = await extractDocument(base64, mimeType, fullPrompt, { extractionMethod, maxTokens, useCache: false })
           rawResponse   = fresh.content
@@ -273,7 +274,7 @@ async function processDocument(docId, { cabinetId, templateId, userId, lang, ext
       }
 
       if (extractedData === null) {
-        console.error(`[Worker] JSON parse failed for ${docId}. Raw (500 chars):`, rawResponse?.slice(0, 500))
+        logger.error('Réponse IA non parsable', { provider: aiProvider, extrait: rawResponse?.slice(0, 300) })
         throw new Error("Le résultat de l'IA n'est pas formaté correctement.")
       }
 
@@ -310,12 +311,12 @@ async function processDocument(docId, { cabinetId, templateId, userId, lang, ext
       }
 
     } catch (err) {
-      console.error(`[Worker] Échec document ${docId}:`, err.message)
+      logger.exception('Échec du traitement du document', err)
       alertExtractionFailed({ documentId: docId, cabinetId, reason: err.message })
       await prisma.document.update({
         where: { id: docId },
         data: { statut: 'REJETE', error_message: err.message },
-      }).catch(e => console.error('[Worker] Impossible de passer en REJETE:', e))
+      }).catch(e => logger.exception('Impossible de passer le document en REJETE', e))
     }
 }
 
@@ -365,10 +366,10 @@ export async function POST(request) {
   const workerSecret = process.env.WORKER_SECRET
   if (!workerSecret) {
     if (process.env.NODE_ENV === 'production') {
-      console.error('[Worker] WORKER_SECRET not set — refusing all requests in production')
+      logger.error('WORKER_SECRET absent — toutes les requêtes sont refusées en production')
       return NextResponse.json({ error: 'Worker non configuré' }, { status: 503 })
     }
-    console.warn('[Worker] WORKER_SECRET not set — unauthenticated access allowed in dev only')
+    logger.warn('WORKER_SECRET absent — accès non authentifié toléré en développement uniquement')
   } else {
     const authHeader = request.headers.get('x-worker-secret')
     if (authHeader !== workerSecret) {
@@ -428,18 +429,22 @@ export async function POST(request) {
           where: { id: { in: docs.slice(processed).map(d => d.id) }, statut: 'EN_COURS_IA' },
           data:  { statut: 'A_EXTRAIRE' },
         })
-        console.log(`[Worker] Budget de temps atteint — ${docs.length - processed} document(s) remis en file`)
+        logger.info('Budget de temps atteint — documents remis en file', { requeued: docs.length - processed, processed })
         break
       }
 
-      const cabinetId = doc.client.cabinet_id
-      await processDocument(doc.id, {
+      const cabinetId       = doc.client.cabinet_id
+      const extractionMethod = await methodFor(cabinetId)
+
+      // Contexte de corrélation : tout log émis pendant le traitement de ce
+      // document le porte, y compris depuis lib/ai.js et lib/extraction.js.
+      await withLogContext({ documentId: doc.id, cabinetId }, () => processDocument(doc.id, {
         cabinetId,
-        templateId:       doc.template_id ?? 'NO_MODEL',
-        userId:           doc.queued_by_user_id,
-        lang:             doc.lang ?? 'fr',
-        extractionMethod: await methodFor(cabinetId),
-      })
+        templateId: doc.template_id ?? 'NO_MODEL',
+        userId:     doc.queued_by_user_id,
+        lang:       doc.lang ?? 'fr',
+        extractionMethod,
+      }))
       processed++
     }
 
@@ -457,7 +462,7 @@ export async function POST(request) {
 
     return NextResponse.json({ success: true, processed, remaining })
   } catch (err) {
-    console.error('[Worker] Crash global:', err)
+    logger.exception('Crash du répartiteur', err)
     return NextResponse.json({ success: false, error: 'Erreur serveur.' }, { status: 500 })
   } finally {
     await releaseDispatchLock()

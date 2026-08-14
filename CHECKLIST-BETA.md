@@ -213,10 +213,17 @@ Résultats obtenus en interrogeant directement Supabase Storage et la base de pr
   Aucun parcours utilisateur automatisé (inscription → upload → extraction → vérification → export). Playwright est disponible mais non intégré au dépôt.
   · Sévérité : important · Effort : **1 journée**
 
-- [ ] **A4 — Logs non structurés**
-  53 appels `console.log/error/warn` en texte libre, sans identifiant de corrélation, sans `cabinet_id`, sans niveau exploitable. Impossible de reconstituer le parcours d'un document en incident.
-  · Fichiers : `app/`, `lib/` (53 occurrences)
-  · Sévérité : important · Effort : **2-3 h**
+- [x] ~~**A4 — Logs non structurés**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-structured-logs`)
+  `lib/logger.js` — journalisation structurée avec **identifiant de corrélation**. Le pipeline d'extraction (`lib/ai.js`, `lib/extraction.js`, `app/api/worker-extraction`) est intégralement converti : **0 `console.*` restant** sur ces trois fichiers.
+  **Le contexte circule via `AsyncLocalStorage`**, pas en paramètre. Le faire traverser `processDocument` → `extractDocument` → `aiExtract` → `callOpenRouter` aurait imposé un argument supplémentaire à toute la chaîne, pour une donnée que seul le journal utilise. Le répartiteur ouvre un contexte par document ; tout ce qui est journalisé en dessous porte automatiquement `documentId` et `cabinetId`.
+  **Deux formats** : une ligne JSON par événement en production (indexée par Vercel), sortie lisible en développement — du JSON brut à l'œil est inexploitable pendant qu'on développe.
+  `logger.exception()` aplatit message et type d'erreur : un objet `Error` sérialisé en JSON donne `{}`, le piège classique.
+  **Vérifié sur le pipeline réel** : 3 documents traités, chacun avec son identifiant propre et son contexte attaché sans intervention.
+  ```
+  [ERROR] [3b2b8fac] Échec du traitement du document {"documentId":"466b555c…","cabinetId":"c1789e40…","error":"Fichier illisible ou introuvable.","errorType":"Error"}
+  ```
+  13 tests ajoutés (`__tests__/lib/logger.test.js`) — total **102**. Ils couvrent le point qui compte : la propagation du contexte à travers des fonctions imbriquées.
+  **Reste en `console.*`** : ~45 appels hors pipeline (routes d'upload, actions, `lib/env.js`). Non prioritaire — la corrélation servait à reconstituer le parcours d'un document en incident, ce qui est désormais couvert.
 
 - [x] ~~**F5 — Le worker d'extraction ne tient pas la charge (Phase 3/4)**~~ — **✅ FAIT le 2026-08-10** (`feature/checklist-extraction-queue`)
   Le worker traitait **tous** les documents d'un lot dans une seule invocation plafonnée à 90 s. À 2-5 s par document, un lot de 700 mourait vers le 35ᵉ : les autres restaient bloqués en `EN_COURS_IA` jusqu'au cron, qui les passait en `REJETE`. Le produit ne tenait donc pas sa promesse d'affiche — « Envoyez 100 factures d'un coup ».
@@ -306,7 +313,7 @@ Trié par sévérité, puis par effort croissant — les gains rapides et bloqua
 | ~~15~~ | ~~S7~~ | ~~Durcissement des clés bêta~~ | ~~45 min~~ | **✅ Fait 2026-08-10** |
 | ~~16~~ | ~~S9~~ | ~~Appartenance du `document_id` feedback~~ | ~~15 min~~ | **✅ Fait 2026-08-10** |
 | ~~17~~ | ~~S10~~ | ~~Rate limiting + circuit breaker distribués~~ | ~~2-3 h~~ | **✅ Fait 2026-08-10** |
-| 18 | A4 | Logs structurés | 2-3 h | ✅ |
+| ~~18~~ | ~~A4~~ | ~~Logs structurés~~ | ~~2-3 h~~ | **✅ Fait 2026-08-10** |
 | ~~19~~ | ~~S8~~ | ~~CSP sans `unsafe-inline`~~ | ~~2-3 h~~ | **✅ Fait 2026-08-10** |
 | 20 | T5 | Tests E2E | 1 j | ✅ |
 | ~~21~~ | ~~F5~~ | ~~File d'attente d'extraction (Phase 3/4)~~ | ~~1-2 j~~ | **✅ Fait 2026-08-10** |

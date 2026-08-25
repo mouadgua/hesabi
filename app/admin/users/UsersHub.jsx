@@ -240,20 +240,21 @@ function PlanModal({ cabinet, open, onClose, onRefresh }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="azure">Azure OCR + modèle gratuit (défaut)</SelectItem>
-                <SelectItem value="hybrid_azure">Azure hybride — texte brut</SelectItem>
-                <SelectItem value="gemini">Gemini seul — repli</SelectItem>
+                <SelectItem value="gemini">Gemini (recommandé)</SelectItem>
+                <SelectItem value="azure">Azure OCR — expérimental</SelectItem>
+                <SelectItem value="hybrid_azure">Azure hybride — expérimental</SelectItem>
               </SelectContent>
             </Select>
-            {(exMethod === 'azure' || exMethod === 'hybrid_azure') && (
-              <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                Azure OCR requis — assure-toi que AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT et KEY sont configurés.
-                Facturation à la page.
-              </p>
-            )}
             {exMethod === 'gemini' && (
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Repli sans Azure. À n&apos;utiliser que si Azure est indisponible.
+                Un seul appel, la voie la plus rapide. Convient à des documents nets.
+              </p>
+            )}
+            {(exMethod === 'azure' || exMethod === 'hybrid_azure') && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                À réserver aux cabinets dont les scans passent mal en lecture directe :
+                deux appels au lieu d&apos;un, latence doublée et facturation Azure à la page.
+                Requiert AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT et KEY.
               </p>
             )}
           </div>

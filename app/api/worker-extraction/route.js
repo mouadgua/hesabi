@@ -89,22 +89,49 @@ function kickDispatcher() {
 }
 
 /** Méthode d'extraction du cabinet, avec repli si la migration n'est pas passée. */
+/**
+ * Détermine la méthode d'extraction d'un cabinet.
+ *
+ * La valeur enregistrée en base fait autorité, et elle seule. La version
+ * précédente laissait la présence de variables d'environnement trancher :
+ *
+ *     let method = azureConfigured ? 'azure' : 'gemini'
+ *     if (saved && saved !== 'gemini') method = saved
+ *
+ * Un cabinet explicitement réglé sur 'gemini' repartait donc sur Azure dès que
+ * les deux clés Azure existaient — la valeur choisie était lue, reconnue, puis
+ * ignorée. Personne ne l'avait demandé et rien ne le signalait.
+ *
+ * Azure n'est désormais emprunté que si le cabinet le demande nommément, et
+ * seulement s'il est réellement configuré : sans les clés, une demande Azure
+ * retombe sur Gemini plutôt que d'échouer à chaque document.
+ */
 async function resolveExtractionMethod(cabinetId) {
-  const azureConfigured =
-    !!process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT &&
-    !!process.env.AZURE_DOCUMENT_INTELLIGENCE_KEY
-
-  let method = azureConfigured ? 'azure' : 'gemini'
+  let saved
   try {
     const rows = await prisma.$queryRaw`
       SELECT "extraction_method" FROM "Cabinet" WHERE id = ${cabinetId}::uuid LIMIT 1
     `
-    const saved = rows[0]?.extraction_method
-    if (saved && saved !== 'gemini') method = saved
-    else if (!azureConfigured) method = saved ?? 'gemini'
+    saved = rows[0]?.extraction_method
   } catch {
-    // Colonne absente — on garde la valeur détectée
+    // Colonne absente (migration non appliquée) : Gemini, comme le défaut du schéma.
+    return 'gemini'
   }
+
+  const method = saved || 'gemini'
+  if (method === 'gemini') return 'gemini'
+
+  const azureConfigured =
+    !!process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT &&
+    !!process.env.AZURE_DOCUMENT_INTELLIGENCE_KEY
+
+  if (!azureConfigured) {
+    logger.warn('Méthode Azure demandée mais non configurée — repli sur Gemini', {
+      cabinetId, methodeDemandee: method,
+    })
+    return 'gemini'
+  }
+
   return method
 }
 

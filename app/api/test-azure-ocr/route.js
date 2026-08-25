@@ -1,3 +1,6 @@
+// ⚠️ Route de diagnostic pour l'OCR Azure — voie disponible mais non prioritaire.
+// Sert à vérifier que les clés Azure répondent avant d'activer la méthode sur un
+// cabinet. Protégée par WORKER_SECRET, elle n'est sur aucun chemin utilisateur.
 import { NextResponse } from 'next/server'
 import { analyzeLayout, simplifyForLLM } from '@/lib/azureOcr'
 

@@ -5,6 +5,7 @@ import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { aiExtract } from '@/lib/ai'
+import { getAppUrl } from '@/lib/env'
 
 // ============================================================================
 // UPLOAD DE DOCUMENTS
@@ -102,7 +103,7 @@ export async function extractDocumentsAction(formData) {
             }
         })
 
-        const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+        const appUrl = getAppUrl()
         fetch(`${appUrl}/api/worker-extraction`, {
             method: 'POST',
             headers: {
@@ -169,7 +170,7 @@ export async function reExtractSingleDocumentAction(formData) {
         }
     })
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+    const appUrl = getAppUrl()
     fetch(`${appUrl}/api/worker-extraction`, {
         method: 'POST',
         headers: {

@@ -7,6 +7,7 @@ import { buildExtractionPrompt } from '@/utils/buildExtractionPrompt'
 import { alertExtractionFailed } from '@/lib/alerts'
 import { redisCommand, isRedisConfigured } from '@/lib/redis'
 import { logger, withLogContext } from '@/lib/logger'
+import { getAppUrl } from '@/lib/env'
 
 // Extracts the first valid JSON object or array from any AI response string.
 // Handles: raw JSON, ```json fences, prose + JSON, trailing commentary.
@@ -77,7 +78,7 @@ async function releaseDispatchLock() {
 
 /** Relance le répartiteur sans attendre sa réponse. */
 function kickDispatcher() {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const appUrl = getAppUrl()
   fetch(`${appUrl}/api/worker-extraction`, {
     method:  'POST',
     headers: {

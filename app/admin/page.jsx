@@ -1,5 +1,4 @@
 import prisma from '@/lib/prisma'
-import { getDemoStats, getDemoLog } from '@/lib/rateLimiter'
 import { getAICacheStats } from '@/lib/ai'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -166,9 +165,18 @@ export default async function AdminOverviewPage() {
   ])
 
   // Demo stats from in-memory rate limiter
-  const demoStats = getDemoStats()
-  const demoLog   = getDemoLog()
-  const demoEmails = [...new Set(demoLog.filter(e => e.status === 'SUCCESS').map(e => e.email))]
+  // Lu en base, plus en mémoire du processus. Les compteurs mémoire repartaient
+  // à zéro à chaque démarrage à froid : ce KPI affichait donc presque toujours 0,
+  // quel que soit le nombre de démos réellement effectuées.
+  const [demoEmailsDistinct, demoTotal] = await Promise.all([
+    prisma.demoAttempt.findMany({
+      where:  { status: 'SUCCESS' },
+      select: { email: true },
+      distinct: ['email'],
+    }),
+    prisma.demoAttempt.count(),
+  ])
+  const demoEmails = demoEmailsDistinct
 
   // Coût réel cumulé (USD en base) converti en dirhams pour l'affichage.
   const costUsd        = costAgg._sum.extraction_cost_est || 0
@@ -200,7 +208,7 @@ export default async function AdminOverviewPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard icon={UsersIcon}       label="Utilisateurs"         value={totalUsers}            sub={`+${activeUsersThisMonth} ce mois`}  />
         <KpiCard icon={ZapIcon}         label="Extractions totales"  value={totalExtractions}      sub={`+${extractionsThisMonth} ce mois`}  color="#8B5CF6" />
-        <KpiCard icon={MailIcon}        label="Emails démo"          value={demoEmails.length}     sub={`${demoStats.total} tentatives`}     color="#F59E0B" />
+        <KpiCard icon={MailIcon}        label="Emails démo"          value={demoEmails.length}     sub={`${demoTotal} tentative${demoTotal > 1 ? 's' : ''}`}     color="#F59E0B" />
         <KpiCard icon={TrendingUpIcon}  label="Score IA moyen"       value={avgScore ? `${avgScore}%` : '—'} sub="confiance classification"  color="#EC4899" />
       </div>
 

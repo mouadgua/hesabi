@@ -1,5 +1,4 @@
 import prisma from '@/lib/prisma'
-import { getDemoLog, getDemoStats } from '@/lib/rateLimiter'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { BarChart2Icon, SmartphoneIcon, MonitorIcon, ActivityIcon } from 'lucide-react'
@@ -22,14 +21,18 @@ export default async function AdminVisitsPage() {
     prisma.demoAttempt.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
   ])
 
-  const demoStats = getDemoStats()
-  const demoLog   = getDemoLog()
-
+  // Tout est calculé sur les lignes en base. Les compteurs venaient auparavant
+  // de la mémoire du processus : chaque démarrage à froid les remettait à zéro,
+  // et en hébergement sans état chaque instance avait les siens. Ils
+  // sous-comptaient donc en permanence, sans que rien ne le signale.
   const mobileCount  = siteVisits.filter(v => v.device === 'mobile').length
   const desktopCount = siteVisits.filter(v => v.device === 'desktop').length
   const uniqueIps    = new Set(siteVisits.map(v => v.ip_hash).filter(Boolean)).size
-  const dbUniqueEmails = new Set(demoAttempts.map(a => a.email))
-  const recentLog = demoLog.slice(0, 20)
+
+  const successes    = demoAttempts.filter(a => a.status === 'SUCCESS')
+  const blocked      = demoAttempts.filter(a => a.status?.startsWith('BLOCKED'))
+  const dbUniqueEmails = new Set(successes.map(a => a.email))
+  const recentLog    = demoAttempts.slice(0, 20)
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
@@ -72,10 +75,10 @@ export default async function AdminVisitsPage() {
           <ActivityIcon className="h-4 w-4 text-[#1D9E75]" /> Démo
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Stat label="Extractions réussies" value={demoStats.total} sub="en mémoire (depuis restart)" />
-          <Stat label="Tentatives bloquées" value={demoStats.blocked} sub="rate limit" />
-          <Stat label="Emails uniques (mém.)" value={demoStats.uniqueEmails} />
-          <Stat label="Emails en DB" value={dbUniqueEmails.size} sub="persistés après démo" />
+          <Stat label="Extractions réussies" value={successes.length} sub="enregistrées en base" />
+          <Stat label="Tentatives bloquées" value={blocked.length} sub="refusées par le limiteur" />
+          <Stat label="Emails uniques" value={dbUniqueEmails.size} sub="ayant réussi une démo" />
+          <Stat label="Tentatives totales" value={demoAttempts.length} sub="succès et refus" />
         </div>
       </div>
 
@@ -84,7 +87,7 @@ export default async function AdminVisitsPage() {
           <CardTitle className="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
             <ActivityIcon className="h-4 w-4 text-[#1D9E75]" />
             Activité démo récente
-            <span className="text-[10px] font-normal text-slate-400">(en mémoire — réinitialisé au restart)</span>
+            <span className="text-[10px] font-normal text-slate-400">(200 dernières, en base)</span>
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -105,7 +108,7 @@ export default async function AdminVisitsPage() {
                   {recentLog.map((e, i) => (
                     <tr key={i} className="hover:bg-slate-50/50 dark:hover:bg-white/[0.02]">
                       <td className="px-4 py-2 text-[12px] text-slate-400 tabular-nums whitespace-nowrap">
-                        {new Date(e.ts).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                        {new Date(e.createdAt).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                       </td>
                       <td className="px-4 py-2 text-[13px] text-slate-700 dark:text-slate-200 truncate max-w-[200px]">{e.email}</td>
                       <td className="px-4 py-2">
@@ -113,7 +116,7 @@ export default async function AdminVisitsPage() {
                           {e.status}
                         </Badge>
                       </td>
-                      <td className="px-4 py-2 text-[12px] text-slate-500">{e.docType ?? '—'}</td>
+                      <td className="px-4 py-2 text-[12px] text-slate-500">{e.doc_type ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>

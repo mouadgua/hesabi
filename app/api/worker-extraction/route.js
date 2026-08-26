@@ -266,7 +266,7 @@ async function processDocument(docId, { cabinetId, templateId, userId, lang, ext
       }
       const maxTokens = TOKEN_BUDGET[classification.type] ?? 3000
 
-      let rawResponse, aiProvider, methodUsed, costEst
+      let rawResponse, aiProvider, methodUsed, costEst, tokensIn, tokensOut
       const extractStart = Date.now()
       try {
         const result = await extractDocument(base64, mimeType, fullPrompt, { extractionMethod, maxTokens })
@@ -274,6 +274,8 @@ async function processDocument(docId, { cabinetId, templateId, userId, lang, ext
         aiProvider  = result.provider
         methodUsed  = result.method_used
         costEst     = result.cost_est
+        tokensIn    = result.tokens_in
+        tokensOut   = result.tokens_out
       } catch (aiErr) {
         if (aiErr.message === 'ALL_PROVIDERS_FAILED') {
           throw new Error('SERVICE_UNAVAILABLE')
@@ -295,6 +297,8 @@ async function processDocument(docId, { cabinetId, templateId, userId, lang, ext
           aiProvider    = fresh.provider
           methodUsed    = fresh.method_used
           costEst       = fresh.cost_est
+          tokensIn      = fresh.tokens_in
+          tokensOut     = fresh.tokens_out
           extractedData = extractJSON(rawResponse)
         } catch (freshErr) {
           if (freshErr.message === 'ALL_PROVIDERS_FAILED') throw new Error('SERVICE_UNAVAILABLE')
@@ -317,6 +321,11 @@ async function processDocument(docId, { cabinetId, templateId, userId, lang, ext
       if (!hasData) throw new Error("L'IA n'a trouvé aucune donnée pertinente.")
 
       // ── STEP 6 : Store result ─────────────────────────────────────────────
+      // Une seule écriture, attendue. Le suivi partait auparavant dans une
+      // seconde mise à jour lancée sans await, l'erreur avalée : sur une
+      // plateforme sans état, l'exécution est gelée dès la fin du traitement,
+      // donc cette écriture aboutissait rarement. C'est ce qui explique que
+      // seuls 4 documents sur 19 portaient un coût, et aucun ses jetons.
       await prisma.document.update({
         where: { id: docId },
         data: {
@@ -325,19 +334,12 @@ async function processDocument(docId, { cabinetId, templateId, userId, lang, ext
           error_message:     null,
           ai_provider:       aiProvider   ?? null,
           processing_ms:     processingMs ?? null,
+          extraction_method_used: methodUsed ?? null,
+          extraction_cost_est:    costEst    ?? null,
+          tokens_in:              tokensIn   ?? null,
+          tokens_out:             tokensOut  ?? null,
         },
       })
-
-      // Store extraction tracking — requires prisma/add_hybrid_extraction.sql
-      if (methodUsed || costEst) {
-        prisma.document.update({
-          where: { id: docId },
-          data: {
-            extraction_method_used: methodUsed ?? null,
-            extraction_cost_est:    costEst    ?? null,
-          },
-        }).catch(() => { /* Migration not yet applied — skip silently */ })
-      }
 
     } catch (err) {
       logger.exception('Échec du traitement du document', err)

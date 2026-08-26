@@ -37,8 +37,8 @@ export default function ManualCreator() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger className="w-full sm:w-auto inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 shadow-sm transition-all">
-        <HandIcon className="w-4 h-4 mr-2 text-gray-500" /> Création Manuelle
+      <DialogTrigger className="w-full inline-flex items-center justify-center rounded-xl text-sm font-medium h-11 px-4 bg-white dark:bg-white/[0.04] border border-slate-200 dark:border-white/[0.12] hover:bg-slate-50 dark:hover:bg-white/[0.08] text-slate-700 dark:text-slate-200 transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1D9E75]/50 focus-visible:ring-offset-2">
+        <HandIcon className="w-4 h-4 mr-2 text-slate-400 dark:text-slate-500" /> Création Manuelle
       </DialogTrigger>
       
       <DialogContent className="sm:max-w-xl">

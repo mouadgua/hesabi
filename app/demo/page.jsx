@@ -69,33 +69,39 @@ function toBase64(file) {
   })
 }
 
-function splitData(obj) {
-  const scalars = {}, arrays = {}
-  for (const [k, v] of Object.entries(obj)) {
-    if (v === null || v === undefined || v === '') continue
-    if (Array.isArray(v) && v.length > 0 && typeof v[0] === 'object') arrays[k] = v
-    else scalars[k] = v
-  }
-  return { scalars, arrays }
-}
-
-function flattenForSheet(obj, prefix = '') {
-  const rows = []
-  for (const [k, v] of Object.entries(obj)) {
+/**
+ * Sépare les données extraites en valeurs affichables et en tableaux de lignes.
+ *
+ * Les objets imbriqués sont aplatis en clés pointées (`bill_from.name`) plutôt
+ * que rangés tels quels. Auparavant ils atterrissaient parmi les valeurs simples
+ * et le rendu faisait `String(v)` : l'écran affichait `[object Object]` à la
+ * place de l'adresse ou du nom du client — une donnée pourtant bien extraite,
+ * mais rendue illisible au dernier moment. L'export CSV avait le même défaut.
+ *
+ * Seuls les tableaux d'objets sont mis à part : ce sont les lignes de facture ou
+ * de relevé, qui méritent leur propre tableau. Un tableau de valeurs simples est
+ * joint sur une ligne, ce qui se lit mieux qu'une énumération de clés indicées.
+ */
+function splitData(obj, prefix = '', acc = { scalars: {}, arrays: {} }) {
+  for (const [k, v] of Object.entries(obj ?? {})) {
     const key = prefix ? `${prefix}.${k}` : k
     if (v === null || v === undefined || v === '') continue
+
     if (Array.isArray(v)) {
-      v.forEach((item, i) => {
-        if (typeof item === 'object' && item !== null) rows.push(...flattenForSheet(item, `${key}[${i + 1}]`))
-        else rows.push({ Champ: `${key}[${i + 1}]`, Valeur: String(item) })
-      })
-    } else if (typeof v === 'object') {
-      rows.push(...flattenForSheet(v, key))
-    } else {
-      rows.push({ Champ: key, Valeur: String(v) })
+      if (v.length === 0) continue
+      if (typeof v[0] === 'object' && v[0] !== null) acc.arrays[key] = v
+      else acc.scalars[key] = v.join(', ')
+      continue
     }
+
+    if (typeof v === 'object') {
+      splitData(v, key, acc)
+      continue
+    }
+
+    acc.scalars[key] = v
   }
-  return rows
+  return acc
 }
 
 function exportToExcel(data, docType, fileName) {

@@ -90,7 +90,7 @@ export default function ExcelModelImporter() {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <button className="relative w-full sm:w-auto inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all focus-visible:outline-none">
+        <button className="relative w-full inline-flex items-center justify-center rounded-xl text-sm font-medium h-11 px-4 bg-[#1D9E75] hover:bg-[#0F6E56] text-white shadow-sm shadow-[#1D9E75]/25 transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1D9E75]/50 focus-visible:ring-offset-2">
           <FileSpreadsheetIcon className="w-4 h-4 mr-2" />
           Importer depuis Excel
           <span className="absolute -top-2 -right-2 bg-amber-400 text-[9px] font-bold text-amber-900 px-1.5 py-0.5 rounded-full leading-none flex items-center gap-0.5">

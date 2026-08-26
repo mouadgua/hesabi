@@ -46,16 +46,19 @@ export default async function ModelsPage() {
           </p>
         </div>
 
-        {/* BUTTONS — spread evenly */}
-        <div className="flex flex-wrap justify-center gap-3 w-full max-w-xl">
+        {/* Trois colonnes égales plutôt qu'un flex-wrap : à trois boutons de
+            largeurs différentes, l'enroulement produisait un 2 + 1 déséquilibré.
+            Hiérarchie explicite — une seule action principale (l'import Excel,
+            celle qui porte le badge « Recommandé »), les deux autres en retrait.
+            Les deux verts en concurrence, dont l'un hors charte, sont supprimés. */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full max-w-2xl">
           <ExcelModelImporter />
-          <ManualCreator />
 
-          {/* Générer par IA — with shine effect */}
+          {/* Générer par IA — action secondaire, teintée pour rester repérable */}
           <Dialog>
-            <ShineWrapper borderRadius="rounded-md">
-              <DialogTrigger className="inline-flex items-center justify-center rounded-md text-sm font-medium h-10 px-5 py-2 bg-[#1D9E75] hover:bg-[#0F6E56] text-white shadow-md shadow-[#1D9E75]/30 transition-all focus-visible:outline-none whitespace-nowrap">
-                <SparklesIcon className="w-4 h-4 mr-2" /> Générer par IA (Photo Excel)
+            <ShineWrapper borderRadius="rounded-xl">
+              <DialogTrigger className="w-full inline-flex items-center justify-center rounded-xl text-sm font-medium h-11 px-4 bg-[#1D9E75]/10 dark:bg-[#1D9E75]/15 border border-[#1D9E75]/30 hover:bg-[#1D9E75]/20 dark:hover:bg-[#1D9E75]/25 text-[#0F6E56] dark:text-[#3FBE93] transition-colors duration-200 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1D9E75]/50 focus-visible:ring-offset-2">
+                <SparklesIcon className="w-4 h-4 mr-2 shrink-0" /> Générer par IA
               </DialogTrigger>
             </ShineWrapper>
             <DialogContent className="sm:max-w-md">
@@ -82,6 +85,8 @@ export default async function ModelsPage() {
               </form>
             </DialogContent>
           </Dialog>
+
+          <ManualCreator />
         </div>
       </div>
 

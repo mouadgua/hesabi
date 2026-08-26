@@ -12,8 +12,15 @@ import { ExtractionsLineChart, ProviderBarChart } from './AdminOverviewCharts'
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const DH_PER_1K_TOKENS_IN  = 0.025  // ~$0.0025 × 10 DH/USD
-const DH_PER_1K_TOKENS_OUT = 0.10   // ~$0.010  × 10 DH/USD
+// Le coût réel de chaque extraction est calculé et stocké au moment du
+// traitement (extraction_cost_est, en USD) : il tient compte du fournisseur
+// employé et, sur les voies Azure, du nombre de pages facturées.
+//
+// L'admin recalculait auparavant un forfait à partir des jetons. Deux défauts :
+// le tarif unique ne correspondait à aucun fournisseur en particulier, et
+// surtout le worker n'a jamais écrit tokens_in / tokens_out — l'écran affichait
+// donc invariablement 0,00 DH alors que la dépense réelle était en base.
+const DH_PER_USD = 10
 
 function formatDH(n) {
   return `${n.toFixed(2)} DH`
@@ -90,8 +97,7 @@ export default async function AdminOverviewPage() {
     recentDocs,
     extractionsByDay,
     providerBreakdown,
-    totalTokensIn,
-    totalTokensOut,
+    costAgg,
   ] = await Promise.all([
     // Users
     prisma.utilisateur.count(),
@@ -152,9 +158,11 @@ export default async function AdminOverviewPage() {
       ORDER BY count DESC
     `,
 
-    // Token totals
-    prisma.document.aggregate({ _sum: { tokens_in: true } }),
-    prisma.document.aggregate({ _sum: { tokens_out: true } }),
+    // Coût réel cumulé, tel qu'enregistré à chaque extraction
+    prisma.document.aggregate({
+      _sum:   { extraction_cost_est: true },
+      _count: { extraction_cost_est: true },
+    }),
   ])
 
   // Demo stats from in-memory rate limiter
@@ -162,10 +170,10 @@ export default async function AdminOverviewPage() {
   const demoLog   = getDemoLog()
   const demoEmails = [...new Set(demoLog.filter(e => e.status === 'SUCCESS').map(e => e.email))]
 
-  // Estimated AI cost
-  const sumIn  = totalTokensIn._sum.tokens_in   || 0
-  const sumOut = totalTokensOut._sum.tokens_out  || 0
-  const estimatedCost = (sumIn / 1000) * DH_PER_1K_TOKENS_IN + (sumOut / 1000) * DH_PER_1K_TOKENS_OUT
+  // Coût réel cumulé (USD en base) converti en dirhams pour l'affichage.
+  const costUsd        = costAgg._sum.extraction_cost_est || 0
+  const costedDocs     = costAgg._count.extraction_cost_est || 0
+  const estimatedCost  = costUsd * DH_PER_USD
 
   const avgScore = avgConfidence._avg.document_type_confidence
     ? Math.round(avgConfidence._avg.document_type_confidence * 100)
@@ -200,7 +208,7 @@ export default async function AdminOverviewPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiCard icon={UsersIcon}        label="Cabinets"         value={totalCabinets}       sub={`${trialCabinets} en TRIAL`}           color="#3B82F6" />
         <KpiCard icon={ZapIcon}          label="Codes beta actifs" value={betaKeys}            sub="codes non révoqués"                    color="#1D9E75" />
-        <KpiCard icon={DollarSignIcon}   label="Coût IA estimé"   value={formatDH(estimatedCost)} sub={`${(sumIn+sumOut).toLocaleString()} tokens`} color="#F59E0B" />
+        <KpiCard icon={DollarSignIcon}   label="Coût IA estimé"   value={formatDH(estimatedCost)} sub={`sur ${costedDocs} extraction${costedDocs > 1 ? 's' : ''} mesurée${costedDocs > 1 ? 's' : ''}`} color="#F59E0B" />
         <KpiCard icon={ActivityIcon}     label="Cache IA"         value={`${cacheStats.size}/${cacheStats.max}`} sub="réponses en mémoire" color="#8B5CF6" />
       </div>
 

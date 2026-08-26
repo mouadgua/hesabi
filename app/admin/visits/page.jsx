@@ -49,10 +49,14 @@ export default async function AdminVisitsPage() {
           <Stat label="demo.hesabi.ma" value={siteVisits.filter(v => v.site === 'demo').length} />
         </div>
         {siteVisits.length === 0 && (
-          <div className="mt-4 rounded-xl border border-dashed border-slate-200 dark:border-white/[0.07] p-5 text-center text-sm text-slate-400">
-            Aucune visite enregistrée. Appelez{' '}
-            <code className="bg-slate-100 dark:bg-white/10 px-1 rounded text-xs">POST /api/track-visit</code>{' '}
-            depuis vos pages marketing pour commencer le tracking.
+          <div className="mt-4 rounded-xl border border-dashed border-slate-200 dark:border-white/[0.07] p-5 text-center text-sm text-slate-400 space-y-1">
+            <p>Ce tableau n&apos;est plus alimenté.</p>
+            <p className="text-xs">
+              L&apos;audience des pages publiques est mesurée par Vercel Web Analytics
+              (onglet <strong>Analytics</strong> du projet). Les pages authentifiées en sont
+              volontairement exclues : elles ne sont pas du trafic marketing et
+              consommeraient le quota mensuel.
+            </p>
           </div>
         )}
         {(mobileCount + desktopCount) > 0 && (

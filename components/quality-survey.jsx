@@ -59,12 +59,28 @@ export default function QualitySurvey() {
 
   if (!visible) return null
 
+  // La réponse part vers le serveur avant toute chose. Elle ne vivait jusqu'ici
+  // que dans localStorage : la page d'administration lisait une table que
+  // personne n'écrivait, et affichait « aucun avis » en toutes circonstances.
+  // L'envoi n'est pas attendu par la navigation — un avis perdu ne doit pas
+  // empêcher l'utilisateur d'atteindre le support — mais il est journalisé.
+  function send(positive) {
+    fetch('/api/ratings', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ positive }),
+      keepalive: true,
+    }).catch(err => console.error('[quality-survey] avis non enregistré', err))
+  }
+
   function handleYes() {
+    send(true)
     markDismissed()
     setVisible(false)
   }
 
   function handleNo() {
+    send(false)
     markShown()
     setVisible(false)
     router.push("/dashboard/support")

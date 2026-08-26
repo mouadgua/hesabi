@@ -2,6 +2,7 @@ import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 import NavigationProgress from "@/components/navigation-progress"
 import { Providers } from "./providers"
+import PublicAnalytics from '@/components/public-analytics'
 
 const sansFont = Plus_Jakarta_Sans({
   variable: "--font-sans",
@@ -31,6 +32,7 @@ export default function RootLayout({ children }) {
         <NavigationProgress />
         <Providers>
           {children}
+          <PublicAnalytics />
         </Providers>
       </body>
     </html>

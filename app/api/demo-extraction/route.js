@@ -88,6 +88,40 @@ export async function GET(request) {
   return NextResponse.json({ fields: ALL_FIELDS })
 }
 
+/**
+ * Enregistre une tentative de démo.
+ *
+ * L'écriture est attendue, et c'est le point important. Elle était auparavant
+ * lancée sans await avec l'erreur avalée :
+ *
+ *     prisma.demoAttempt.create({ ... }).catch(() => {})
+ *     return NextResponse.json(...)
+ *
+ * Sur une plateforme sans état, l'exécution est gelée dès la réponse renvoyée :
+ * la promesse ne se terminait donc généralement jamais, et le `.catch` vide
+ * garantissait qu'aucun échec ne soit signalé. Résultat, aucune démo n'a jamais
+ * été enregistrée alors que l'interface d'administration prétendait les compter.
+ *
+ * Le coût d'attendre est une écriture unique — négligeable devant l'appel IA qui
+ * précède, et sans commune mesure avec la perte de toute la mesure d'usage.
+ */
+async function recordAttempt({ email, sessionId, status, docType, ipHash, reason }) {
+  try {
+    await prisma.demoAttempt.create({
+      data: {
+        email:      email,
+        session_id: sessionId,
+        status,
+        doc_type:   docType ?? null,
+        ip_hash:    ipHash,
+      },
+    })
+  } catch (err) {
+    // Journalisé plutôt qu'avalé : une démo perdue doit rester visible.
+    logger.exception('Enregistrement de la tentative de démo impossible', err, { status, reason })
+  }
+}
+
 export async function POST(request) {
   const rawIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '127.0.0.1'
   const ipHash = hashIp(rawIp)
@@ -133,6 +167,16 @@ export async function POST(request) {
         rateCheck.reason === 'email'
           ? `Vous avez déjà utilisé la démo. Réessayez dans ${rateCheck.waitHours}h.`
           : `Limite de la session atteinte. Réessayez dans ${rateCheck.waitMinutes} minutes.`
+      // Une tentative bloquée est une information : elle dit qu'on a voulu
+      // relancer la démo, ce que le seul compteur des succès ne montre pas.
+      await recordAttempt({
+        email:    cleanEmail,
+        sessionId: cleanSession,
+        // Convention déjà documentée dans le schéma, plutôt qu'une valeur inventée.
+        status:   rateCheck.reason === 'email' ? 'BLOCKED_EMAIL' : 'BLOCKED_SESSION',
+        ipHash,
+        reason:   rateCheck.reason,
+      })
       return NextResponse.json({ error: message, rateLimited: true }, { status: 429 })
     }
 
@@ -196,16 +240,10 @@ export async function POST(request) {
     // ── Record & respond ────────────────────────────────────────────────────────
     recordDemoRequest(cleanSession, cleanEmail, docType)
 
-    // Persist to DB for admin dashboard (fire-and-forget, non-blocking)
-    prisma.demoAttempt.create({
-      data: {
-        email:      cleanEmail,
-        session_id: cleanSession,
-        status:     'SUCCESS',
-        doc_type:   docType,
-        ip_hash:    ipHash,
-      },
-    }).catch(() => {})
+    await recordAttempt({
+      email: cleanEmail, sessionId: cleanSession, status: 'SUCCESS',
+      docType, ipHash,
+    })
 
     return NextResponse.json({ success: true, docType, confidence, data: extractedData })
   } catch (err) {

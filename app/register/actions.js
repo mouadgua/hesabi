@@ -70,6 +70,13 @@ export async function registerUser(formData) {
   // deux requêtes distinctes, donc deux inscriptions simultanées avec la même
   // clé passeraient toutes les deux. On réserve la clé maintenant, en une seule
   // opération conditionnelle — même parade que pour les crédits.
+  // Pour une clé à usage unique (max_uses null), le drapeau `used` doit basculer
+  // dans CETTE requête. Il ne l'était qu'après la création du compte : la
+  // condition `used: false` restait donc vraie entre-temps, et deux inscriptions
+  // simultanées avec la même clé passaient toutes les deux. Seul use_count était
+  // incrémenté, ce qui ne protégeait rien puisqu'il n'était pas la condition.
+  // En l'écrivant ici, la condition s'exclut elle-même : la deuxième requête ne
+  // trouve plus de ligne correspondante.
   const claim = await prisma.betaKey.updateMany({
     where: {
       key:       betaKey,
@@ -78,7 +85,9 @@ export async function registerUser(formData) {
         ? { used: false }
         : { use_count: { lt: keyRecord.max_uses } }),
     },
-    data: { use_count: { increment: 1 } },
+    data: keyRecord.max_uses == null
+      ? { use_count: { increment: 1 }, used: true }
+      : { use_count: { increment: 1 } },
   })
   if (claim.count === 0) {
     redirect('/register?error=' + encodeURIComponent("Cette clé vient d'être utilisée. Demandez-en une nouvelle."))
@@ -100,9 +109,14 @@ export async function registerUser(formData) {
   if (adminError) {
     // La clé a été réservée juste avant : on la relâche, sinon un email déjà
     // pris consommerait définitivement une clé valide.
+    // La libération doit annuler exactement ce que la réservation a écrit :
+    // sans remettre `used` à false, une clé à usage unique serait définitivement
+    // perdue parce qu'une adresse email était déjà prise.
     await prisma.betaKey.updateMany({
       where: { key: betaKey },
-      data:  { use_count: { decrement: 1 } },
+      data:  keyRecord.max_uses == null
+        ? { use_count: { decrement: 1 }, used: false }
+        : { use_count: { decrement: 1 } },
     }).catch(e => console.error('[register] Libération de la clé impossible :', e.message))
     redirect('/register?error=' + encodeURIComponent(adminError.message))
   }

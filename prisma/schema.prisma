@@ -199,7 +199,7 @@ model BetaKey {
   used_by     String?   // email of user who redeemed
   used_at     DateTime?
   expires_at  DateTime?
-  max_uses    Int?      // null = unlimited, 1 = single-use
+  max_uses    Int?      // null = usage unique (régi par `used`), N = N utilisations
   use_count   Int       @default(0)
   credits     Int       @default(15)  // extractions granted on redemption
   is_active   Boolean   @default(true)

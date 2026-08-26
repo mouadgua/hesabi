@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import prisma from '@/lib/prisma'
 import { alertStuckDocumentsRecovered } from '@/lib/alerts'
+import { reclaimStaleDocuments } from '@/lib/recovery'
 
 // Called every 5 minutes by Vercel Cron (see vercel.json)
 // Passes EN_COURS_IA documents stuck for more than 10 minutes back to REJETE
@@ -28,27 +28,18 @@ export async function GET(request) {
     }
   }
 
-  const cutoff = new Date(Date.now() - 10 * 60 * 1000) // 10 minutes ago
+  // La règle vit dans lib/recovery.js : le répartiteur l'applique aussi, et un
+  // seuil qui divergerait entre les deux donnerait des résultats contradictoires.
+  const { count, cutoff } = await reclaimStaleDocuments()
 
-  const result = await prisma.document.updateMany({
-    where: {
-      statut:    'EN_COURS_IA',
-      updatedAt: { lt: cutoff },
-    },
-    data: {
-      statut:        'REJETE',
-      error_message: "Timeout serveur — relancez l'extraction.",
-    },
-  })
-
-  console.log(`[cron/recovery] Recovered ${result.count} stuck document(s)`)
+  console.log(`[cron/recovery] Recovered ${count} stuck document(s)`)
 
   // Un ou deux documents, c'est le filet de sécurité qui fait son travail.
   // Un lot signale autre chose : worker interrompu, ou plafond de 90 s atteint.
-  alertStuckDocumentsRecovered(result.count)
+  alertStuckDocumentsRecovered(count)
 
   return NextResponse.json({
-    recovered: result.count,
+    recovered: count,
     cutoff:    cutoff.toISOString(),
     ts:        new Date().toISOString(),
   })

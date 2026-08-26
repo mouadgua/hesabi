@@ -4,10 +4,11 @@ import { createClient } from '@supabase/supabase-js'
 import { extractDocument } from '@/lib/extraction'
 import { classifyAndDetect } from '@/lib/classify'
 import { buildExtractionPrompt } from '@/utils/buildExtractionPrompt'
-import { alertExtractionFailed } from '@/lib/alerts'
+import { alertExtractionFailed, alertStuckDocumentsRecovered } from '@/lib/alerts'
 import { redisCommand, isRedisConfigured } from '@/lib/redis'
 import { logger, withLogContext } from '@/lib/logger'
 import { getAppUrl } from '@/lib/env'
+import { reclaimStaleDocuments } from '@/lib/recovery'
 
 // Extracts the first valid JSON object or array from any AI response string.
 // Handles: raw JSON, ```json fences, prose + JSON, trailing commentary.
@@ -415,6 +416,16 @@ export async function POST(request) {
   }
 
   try {
+    // Rattrapage avant sélection : un document abandonné par une invocation morte
+    // reste EN_COURS_IA et n'est repris par personne. Le faire ici plutôt que
+    // d'attendre le cron change l'échelle — le répartiteur tourne à chaque mise
+    // en file, le cron une fois par jour sur le plan actuel.
+    const reclaimed = await reclaimStaleDocuments()
+    if (reclaimed.count > 0) {
+      logger.warn('Documents bloqués rattrapés avant sélection', { nombre: reclaimed.count })
+      alertStuckDocumentsRecovered(reclaimed.count)
+    }
+
     const batch = await selectFairBatch(BATCH_SIZE)
     if (batch.length === 0) {
       return NextResponse.json({ success: true, processed: 0, remaining: 0 })

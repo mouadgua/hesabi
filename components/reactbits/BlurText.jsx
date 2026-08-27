@@ -25,6 +25,7 @@ export default function BlurText({
   easing = (t) => t,
   onAnimationComplete,
   stepDuration = 0.35,
+  as: Tag = "p",
 }) {
   const elements = animateBy === "words" ? text.split(" ") : text.split("")
   const [inView, setInView] = useState(false)
@@ -75,7 +76,7 @@ export default function BlurText({
   )
 
   return (
-    <p ref={ref} className={className} style={{ display: "flex", flexWrap: "wrap" }}>
+    <Tag ref={ref} className={className} style={{ display: "flex", flexWrap: "wrap" }}>
       {elements.map((segment, index) => {
         const animateKeyframes = buildKeyframes(fromSnapshot, toSnapshots)
         const spanTransition = {
@@ -101,6 +102,6 @@ export default function BlurText({
           </motion.span>
         )
       })}
-    </p>
+    </Tag>
   )
 }

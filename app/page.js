@@ -287,6 +287,10 @@ export default function LandingPage() {
             direction="top"
             stepDuration={0.4}
             onAnimationComplete={() => setHeroReady(true)}
+            // Le titre du hero était rendu en <p> : la page d'accueil n'avait
+            // donc aucun h1. Un moteur y lit le sujet principal de la page ;
+            // sans lui, il doit le déduire du reste.
+            as="h1"
             className="text-4xl sm:text-5xl lg:text-[4.5rem] xl:text-[5rem] font-black tracking-tight leading-[1.05] text-slate-900 dark:text-white justify-center mb-8"
           />
 

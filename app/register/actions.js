@@ -35,6 +35,16 @@ export async function registerUser(formData) {
     redirect('/register?error=' + encodeURIComponent(pwCheck.message))
   }
 
+  // L'avertissement bêta est aussi contrôlé ici. Le `required` du navigateur
+  // n'engage que les navigateurs : une requête construite à la main l'ignore.
+  // Sans ce contrôle, on ne pourrait pas affirmer que l'avertissement a été
+  // présenté et accepté — ce qui est tout l'intérêt de le demander.
+  if (formData.get('beta_ack') !== 'on') {
+    redirect('/register?error=' + encodeURIComponent(
+      "Merci de confirmer avoir lu les conditions de la bêta."
+    ))
+  }
+
   // ── 1. Validate beta key ───────────────────────────────────────────────────
   if (!betaKey) {
     redirect('/register?error=' + encodeURIComponent("Clé d'accès bêta requise."))

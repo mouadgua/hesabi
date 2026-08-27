@@ -83,6 +83,45 @@ export default function RegisterForm({ errorMsg }) {
         </div>
       )}
 
+      {/* Avertissement bêta — placé avant le bouton, pas après l'inscription :
+          quelqu'un doit pouvoir renoncer avant d'avoir créé un compte, pas
+          l'apprendre une fois ses documents déjà téléversés. La case est
+          obligatoire, et le serveur la revérifie : sans quoi une requête forgée
+          contournerait l'avertissement et il ne resterait aucune trace de
+          l'avoir présenté. */}
+      <div className="rounded-xl border border-amber-200 dark:border-amber-500/25 bg-amber-50 dark:bg-amber-500/10 p-3.5 space-y-2.5 mt-2">
+        <p className="text-xs font-semibold text-amber-900 dark:text-amber-300">
+          Version bêta — à lire avant de créer votre espace
+        </p>
+        <ul className="text-xs text-amber-900/85 dark:text-amber-200/80 space-y-1.5 list-disc pl-4">
+          <li>
+            Les documents que vous téléversez (factures, reçus, relevés) sont
+            <strong> conservés sur nos serveurs</strong> afin d&apos;être traités et
+            de vous être restitués.
+          </li>
+          <li>
+            <strong>N&apos;utilisez pas de documents contenant des données sensibles
+            ou confidentielles</strong> : cette période sert à éprouver le produit.
+            Préférez des pièces de test ou déjà publiques.
+          </li>
+          <li>
+            Le service est en cours de test : des interruptions, des pertes de
+            données ou des erreurs d&apos;extraction restent possibles. Ne vous en
+            servez pas comme source unique pour votre comptabilité.
+          </li>
+        </ul>
+        <label htmlFor="beta_ack" className="flex items-start gap-2.5 cursor-pointer pt-1">
+          <input
+            id="beta_ack" name="beta_ack" type="checkbox" required
+            className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer accent-[#1D9E75] rounded"
+          />
+          <span className="text-xs text-amber-900 dark:text-amber-200 leading-snug">
+            J&apos;ai lu et compris ces conditions, et je m&apos;engage à ne pas
+            téléverser de documents sensibles pendant la bêta.
+          </span>
+        </label>
+      </div>
+
       <button
         formAction={registerUser}
         className="w-full bg-[#1D9E75] hover:opacity-90 text-white font-semibold py-2.5 rounded-xl shadow-sm transition-all focus:ring-2 focus:ring-offset-2 focus:ring-[#1D9E75] outline-none text-sm cursor-pointer mt-2"

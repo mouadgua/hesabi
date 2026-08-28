@@ -741,6 +741,18 @@ export default function ExtractionHub({
             )}
           </div>
 
+          {/* Rappel bêta au moment du dépôt. L'avertissement de l'inscription a pu
+              être accepté des semaines plus tôt : le moment où le risque se
+              matérialise est celui-ci, pas celui de la création du compte.
+              Discret à dessein — un bandeau anxiogène finit par ne plus être lu. */}
+          <p className="flex items-start gap-1.5 text-[11px] text-slate-400 dark:text-slate-500 leading-snug pt-0.5">
+            <ShieldAlertIcon className="w-3.5 h-3.5 shrink-0 mt-px" />
+            <span>
+              Bêta — vos documents sont conservés sur nos serveurs.
+              Évitez les pièces contenant des données sensibles.
+            </span>
+          </p>
+
           {/* Hidden file inputs */}
           <input ref={singleRef} type="file" accept={ACCEPT_ATTR} className="hidden" disabled={uploadDisabled}
             onChange={e => { handleFiles([...e.target.files]); e.target.value = '' }} />

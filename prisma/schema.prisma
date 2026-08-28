@@ -21,6 +21,11 @@ model Utilisateur {
   last_active_at  DateTime?
 
   cabinet         Cabinet? @relation(fields: [cabinet_id], references: [id], onDelete: Cascade)
+
+  // Date d'acceptation de l'avertissement bêta (stockage des documents,
+  // données sensibles, absence de garantie). Conservée pour pouvoir établir
+  // que l'avertissement a été présenté et accepté, et quand.
+  beta_ack_at         DateTime?
 }
 
 model Cabinet {

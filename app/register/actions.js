@@ -147,6 +147,12 @@ export async function registerUser(formData) {
       nom,
       role: 'EXPERT_COMPTABLE',
       onboarding_done: false,
+      // Horodatage de l'acceptation de l'avertissement bêta. La case était
+      // jusqu'ici vérifiée puis oubliée : rien ne permettait d'établir plus
+      // tard qu'elle avait été présentée et acceptée, ni quand. On n'atteint
+      // cette ligne qu'après le contrôle serveur, donc la valeur ne peut pas
+      // être posée sans acceptation réelle.
+      beta_ack_at: new Date(),
     },
     update: {},
   })

@@ -19,11 +19,12 @@ import {
   UploadCloudIcon, FileTextIcon, ImageIcon, Loader2Icon, SparklesIcon,
   Trash2Icon, ChevronRightIcon, AlertCircleIcon,
   CheckCircle2Icon, ClockIcon, FolderIcon, AlertTriangleIcon,
-  CreditCardIcon, WifiOffIcon, ShieldAlertIcon, UsersIcon, XIcon,
+  CreditCardIcon, WifiOffIcon, ShieldAlertIcon, UsersIcon, XIcon, EyeIcon,
   SearchIcon, FilterXIcon,
 } from "lucide-react"
 import { FirstVisitHint } from "@/components/first-visit-hint"
 import AIErrorModal, { getAIErrorCode } from "@/components/ai-error-modal"
+import DocumentPreview from "@/components/document-preview"
 import { validateFileClientSide } from "@/lib/clientValidation"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -149,6 +150,7 @@ export default function ExtractionHub({
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [creditsModal, setCreditsModal] = useState(null) // { files, folderGetter, available }
   const [aiError, setAiError] = useState(null)
+  const [previewDoc, setPreviewDoc] = useState(null)
   const [isIOS, setIsIOS] = useState(false)
   const [resumeBanner, setResumeBanner] = useState(null) // { batchId, total, done }
   const [, startTransition] = useTransition()
@@ -544,9 +546,14 @@ export default function ExtractionHub({
     setSelectedDocIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
   }
 
-  function handleExtract() {
-    if (selectedDocIds.size === 0) { toast.error("Sélectionnez au moins un fichier à extraire."); return }
-    const ids = [...selectedDocIds]
+  // `explicitIds` permet de lancer une extraction depuis l'aperçu, sur un seul
+  // document, sans passer par la sélection de la liste — celle-ci resterait
+  // sinon à cocher/décocher juste pour traiter la pièce qu'on a sous les yeux.
+  function handleExtract(explicitIds) {
+    const ids = Array.isArray(explicitIds) && explicitIds.length
+      ? explicitIds
+      : [...selectedDocIds]
+    if (ids.length === 0) { toast.error("Sélectionnez au moins un fichier à extraire."); return }
     const fd  = new FormData()
     fd.append('template_id', templateId)
     fd.append('lang', lang)
@@ -987,9 +994,17 @@ export default function ExtractionHub({
                   <DocFileIcon filename={doc.nom_fichier} />
 
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
+                    {/* Le nom ouvre l'aperçu : c'est l'élément qu'on vise
+                        naturellement pour « voir » un document, plutôt qu'une
+                        icône supplémentaire dans une rangée déjà chargée. */}
+                    <button
+                      type="button"
+                      onClick={() => setPreviewDoc(doc)}
+                      className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate block w-full text-left hover:text-[#1D9E75] dark:hover:text-[#1D9E75] transition-colors cursor-pointer focus-visible:outline-none focus-visible:underline"
+                      title="Aperçu du document"
+                    >
                       {doc.nom_fichier ?? 'Sans nom'}
-                    </p>
+                    </button>
                     {doc.dossier_nom && (
                       <p className="text-[10px] text-slate-400 dark:text-slate-600 flex items-center gap-1 mt-0.5">
                         <FolderIcon className="w-2.5 h-2.5" />
@@ -1020,6 +1035,14 @@ export default function ExtractionHub({
                   )}
 
                   <div className="flex items-center gap-1 shrink-0 ml-1">
+                    <Button
+                      variant="ghost" size="icon"
+                      className="h-7 w-7 text-slate-400 hover:text-[#1D9E75] hover:bg-[#E1F5EE] dark:hover:bg-[#1D9E75]/10"
+                      onClick={() => setPreviewDoc(doc)}
+                      title="Aperçu"
+                    >
+                      <EyeIcon className="w-3.5 h-3.5" />
+                    </Button>
                     {(doc.statut === 'A_VERIFIER' || doc.statut === 'VALIDE') && (
                       <Link href={`/dashboard/verification/${doc.id}`}>
                         <Button
@@ -1103,6 +1126,15 @@ export default function ExtractionHub({
       </AlertDialog>
 
       <FirstVisitHint />
+
+      <DocumentPreview
+        doc={previewDoc}
+        open={!!previewDoc}
+        onClose={() => setPreviewDoc(null)}
+        onExtract={d => handleExtract([d.id])}
+        onDelete={d => confirmDelete(d.id, d.nom_fichier ?? 'ce document')}
+        onVerify={d => router.push(`/dashboard/verification/${d.id}`)}
+      />
 
       {aiError && (
         <AIErrorModal

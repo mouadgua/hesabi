@@ -20,7 +20,7 @@ import {
   Trash2Icon, ChevronRightIcon, AlertCircleIcon,
   CheckCircle2Icon, ClockIcon, FolderIcon, AlertTriangleIcon,
   CreditCardIcon, WifiOffIcon, ShieldAlertIcon, UsersIcon, XIcon, EyeIcon,
-  FolderPlusIcon, PencilIcon, FolderInputIcon,
+  FolderPlusIcon, PencilIcon, FolderInputIcon, HomeIcon, CornerLeftUpIcon,
   SearchIcon, FilterXIcon,
 } from "lucide-react"
 import { FirstVisitHint } from "@/components/first-visit-hint"
@@ -1070,13 +1070,32 @@ export default function ExtractionHub({
             il n'apprendrait rien, et occuperait une ligne pour le dire.
             Masqué pendant une recherche, dont les résultats viennent de partout. */}
         {!enRecherche && chemin.length > 0 && (
-          <nav aria-label="Fil d'Ariane" className="flex items-center gap-1 flex-wrap text-[13px] px-0.5">
+          <nav aria-label="Fil d'Ariane" className="flex items-center gap-1.5 flex-wrap text-[13px] px-0.5">
+            {/* Remonter d'un niveau — n'apparaît qu'à partir du deuxième, où
+                « racine » et « parent » cessent de désigner le même endroit.
+                Au premier niveau il ferait doublon avec le retour à la racine. */}
+            {chemin.length > 1 && (
+              <button
+                type="button"
+                onClick={() => { setDossierCourant(chemin[chemin.length - 2].id); setSelectedDocIds(new Set()) }}
+                title={`Remonter vers « ${chemin[chemin.length - 2].nom} »`}
+                className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-slate-200 dark:border-white/[0.12] bg-white dark:bg-white/[0.04] text-slate-500 dark:text-slate-400 hover:text-[#1D9E75] hover:border-[#1D9E75]/50 transition-colors cursor-pointer"
+              >
+                <CornerLeftUpIcon className="w-4 h-4" />
+              </button>
+            )}
+
+            {/* Retour à la racine. Rendu comme un bouton et non comme le simple
+                texte d'un fil d'Ariane : c'est l'action la plus demandée une fois
+                descendu de plusieurs niveaux, et rien ne signalait qu'elle en
+                était une. */}
             <button
               type="button"
               onClick={() => { setDossierCourant(null); setSelectedDocIds(new Set()) }}
-              className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400 hover:text-[#1D9E75] transition-colors cursor-pointer"
+              title="Revenir à la racine"
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-200 dark:border-white/[0.12] bg-white dark:bg-white/[0.04] font-medium text-slate-600 dark:text-slate-300 hover:text-[#1D9E75] hover:border-[#1D9E75]/50 transition-colors cursor-pointer"
             >
-              <FolderIcon className="w-3.5 h-3.5" /> Tous les documents
+              <HomeIcon className="w-3.5 h-3.5" /> Racine
             </button>
             {chemin.map((d, i) => (
               <span key={d.id} className="inline-flex items-center gap-1">

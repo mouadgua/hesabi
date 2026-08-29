@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from 'react'
+import { useTheme } from 'next-themes'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -8,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  ArrowLeftIcon, ArrowRightIcon, CheckIcon, Loader2Icon, XIcon,
+  ArrowLeftIcon, ArrowRightIcon, CheckIcon, Loader2Icon, XIcon, SunIcon, MoonIcon,
   UserIcon, ClockIcon, SparklesIcon, WalletIcon, PartyPopperIcon,
 } from 'lucide-react'
 import { submitBetaFeedback } from '@/app/dashboard/feedback/actions'
@@ -62,7 +63,7 @@ const STEPS_PUBLIC = [ETAPE_PROFIL, ETAPE_QUOTIDIEN, ETAPE_DEMAIN]
 function Choice({ label, options, value, onChange, hint }) {
   return (
     <fieldset className="space-y-2">
-      <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</legend>
+      <legend className="text-[15px] font-semibold text-slate-800 dark:text-slate-100">{label}</legend>
       {hint && <p className="text-xs text-slate-400">{hint}</p>}
       <div className="flex flex-wrap gap-2 pt-0.5">
         {options.map(o => {
@@ -71,10 +72,10 @@ function Choice({ label, options, value, onChange, hint }) {
             <button
               key={o} type="button" onClick={() => onChange(actif ? null : o)}
               aria-pressed={actif}
-              className={`px-3 py-2 rounded-xl text-[13px] border transition-colors cursor-pointer
+              className={`px-4 py-2.5 rounded-xl text-[14px] border transition-colors cursor-pointer
                 ${actif
-                  ? 'bg-[#1D9E75] border-[#1D9E75] text-white'
-                  : 'bg-white dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.12] text-slate-600 dark:text-slate-300 hover:border-[#1D9E75]/50'}`}
+                  ? 'bg-[#1D9E75] border-[#1D9E75] text-white font-medium'
+                  : 'bg-white dark:bg-white/[0.06] border-slate-300 dark:border-white/[0.18] text-slate-700 dark:text-slate-200 hover:border-[#1D9E75] hover:bg-[#1D9E75]/5'}`}
             >
               {o}
             </button>
@@ -89,7 +90,7 @@ function MultiChoice({ label, options, values = [], onChange, hint }) {
   const toggle = o => onChange(values.includes(o) ? values.filter(v => v !== o) : [...values, o])
   return (
     <fieldset className="space-y-2">
-      <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</legend>
+      <legend className="text-[15px] font-semibold text-slate-800 dark:text-slate-100">{label}</legend>
       {hint && <p className="text-xs text-slate-400">{hint}</p>}
       <div className="flex flex-wrap gap-2 pt-0.5">
         {options.map(o => {
@@ -98,10 +99,10 @@ function MultiChoice({ label, options, values = [], onChange, hint }) {
             <button
               key={o} type="button" onClick={() => toggle(o)}
               aria-pressed={actif}
-              className={`px-3 py-2 rounded-xl text-[13px] border transition-colors cursor-pointer inline-flex items-center gap-1.5
+              className={`px-4 py-2.5 rounded-xl text-[14px] border transition-colors cursor-pointer inline-flex items-center gap-1.5
                 ${actif
-                  ? 'bg-[#1D9E75] border-[#1D9E75] text-white'
-                  : 'bg-white dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.12] text-slate-600 dark:text-slate-300 hover:border-[#1D9E75]/50'}`}
+                  ? 'bg-[#1D9E75] border-[#1D9E75] text-white font-medium'
+                  : 'bg-white dark:bg-white/[0.06] border-slate-300 dark:border-white/[0.18] text-slate-700 dark:text-slate-200 hover:border-[#1D9E75] hover:bg-[#1D9E75]/5'}`}
             >
               {actif && <CheckIcon className="w-3 h-3" />}
               {o}
@@ -117,7 +118,7 @@ function Scale({ label, min, max, value, onChange, minLabel, maxLabel }) {
   const points = Array.from({ length: max - min + 1 }, (_, i) => min + i)
   return (
     <fieldset className="space-y-2">
-      <legend className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</legend>
+      <legend className="text-[15px] font-semibold text-slate-800 dark:text-slate-100">{label}</legend>
       <div className="flex flex-wrap gap-1.5 pt-0.5">
         {points.map(n => {
           const actif = value === n
@@ -125,10 +126,10 @@ function Scale({ label, min, max, value, onChange, minLabel, maxLabel }) {
             <button
               key={n} type="button" onClick={() => onChange(actif ? null : n)}
               aria-pressed={actif} aria-label={`${label} : ${n}`}
-              className={`w-9 h-9 rounded-lg text-[13px] font-medium border transition-colors cursor-pointer tabular-nums
+              className={`w-11 h-11 rounded-xl text-[15px] font-semibold border transition-colors cursor-pointer tabular-nums
                 ${actif
                   ? 'bg-[#1D9E75] border-[#1D9E75] text-white'
-                  : 'bg-white dark:bg-white/[0.04] border-slate-200 dark:border-white/[0.12] text-slate-600 dark:text-slate-300 hover:border-[#1D9E75]/50'}`}
+                  : 'bg-white dark:bg-white/[0.06] border-slate-300 dark:border-white/[0.18] text-slate-700 dark:text-slate-200 hover:border-[#1D9E75] hover:bg-[#1D9E75]/5'}`}
             >
               {n}
             </button>
@@ -144,10 +145,53 @@ function Scale({ label, min, max, value, onChange, minLabel, maxLabel }) {
   )
 }
 
+// Les champs par défaut sont dimensionnés pour un formulaire dense. Ici chaque
+// écran ne pose que quelques questions : ils étaient trop petits et leur contour
+// trop pâle pour qu'on repère où écrire. Hauteur, taille de texte et contraste
+// du contour sont relevés.
+const CHAMP = "h-12 text-base rounded-xl border-slate-300 dark:border-white/[0.18] " +
+  "bg-white dark:bg-white/[0.06] placeholder:text-slate-400 " +
+  "focus-visible:ring-2 focus-visible:ring-[#1D9E75]/40 focus-visible:border-[#1D9E75]"
+
+const ZONE = "text-base rounded-xl border-slate-300 dark:border-white/[0.18] " +
+  "bg-white dark:bg-white/[0.06] placeholder:text-slate-400 " +
+  "focus-visible:ring-2 focus-visible:ring-[#1D9E75]/40 focus-visible:border-[#1D9E75]"
+
+/**
+ * Bascule clair / sombre.
+ *
+ * Le questionnaire occupe tout l'écran : il masque l'en-tête du site et donc la
+ * bascule qui s'y trouve. Sans elle ici, quelqu'un qui remplit le formulaire en
+ * plein soleil ne pourrait plus repasser en thème clair.
+ *
+ * Le rendu est différé jusqu'au montage : le thème n'est connu qu'une fois le
+ * navigateur actif, et afficher une icône avant produirait un clignotement au
+ * chargement — voire une différence entre serveur et client.
+ */
+function BasculeTheme() {
+  const { theme, setTheme } = useTheme()
+  const [monte, setMonte] = useState(false)
+  useEffect(() => setMonte(true), [])
+  if (!monte) return <span className="h-9 w-9 shrink-0" />
+
+  const sombre = theme === 'dark'
+  return (
+    <button
+      type="button"
+      onClick={() => setTheme(sombre ? 'light' : 'dark')}
+      aria-label={sombre ? 'Passer au thème clair' : 'Passer au thème sombre'}
+      title={sombre ? 'Thème clair' : 'Thème sombre'}
+      className="shrink-0 flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+    >
+      {sombre ? <SunIcon className="w-5 h-5 text-amber-400" /> : <MoonIcon className="w-5 h-5 text-slate-500" />}
+    </button>
+  )
+}
+
 function Champ({ label, children, hint }) {
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</Label>
+      <Label className="text-[15px] font-semibold text-slate-800 dark:text-slate-100">{label}</Label>
       {hint && <p className="text-xs text-slate-400">{hint}</p>}
       {children}
     </div>
@@ -252,6 +296,8 @@ export default function FeedbackWizard({ defaultNom = '', mode = 'compte' }) {
             <span className="ml-auto text-xs text-slate-400 tabular-nums shrink-0 hidden sm:inline">
               Étape {step + 1} / {STEPS.length}
             </span>
+            <BasculeTheme />
+
             {/* Quitter — les réponses sont déjà en mémoire, donc partir ne coûte
                 rien. Le dire évite qu'on remplisse par crainte de tout perdre. */}
             <button
@@ -279,23 +325,35 @@ export default function FeedbackWizard({ defaultNom = '', mode = 'compte' }) {
         {cle === 'profil' && (
           <>
             <Champ label="Nom complet *">
-              <Input value={a.nom_complet ?? ''} onChange={e => set('nom_complet', e.target.value)}
+              <Input className={CHAMP} value={a.nom_complet ?? ''} onChange={e => set('nom_complet', e.target.value)}
                 placeholder="Mouad Guarraz" />
             </Champ>
+            {/* Piège à robots. Retiré du flux et de l'ordre de tabulation, et
+                annoncé comme tel aux lecteurs d'écran : un humain ne le voit ni
+                ne l'atteint, un automate le remplit parce qu'il lit le HTML. */}
+            {publik && (
+              <input
+                type="text" name="site_web" tabIndex={-1} autoComplete="off"
+                aria-hidden="true"
+                value={a.site_web ?? ''} onChange={e => set('site_web', e.target.value)}
+                style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }}
+              />
+            )}
+
             {publik && (
               <Champ label="Email *" hint="C'est par là qu'on vous enverra votre accès.">
-                <Input type="email" value={a.email ?? ''} onChange={e => set('email', e.target.value)}
+                <Input className={CHAMP} type="email" value={a.email ?? ''} onChange={e => set('email', e.target.value)}
                   placeholder="contact@cabinet.ma" />
               </Champ>
             )}
             <Champ label="Nom du cabinet">
-              <Input value={a.cabinet_nom ?? ''} onChange={e => set('cabinet_nom', e.target.value)}
+              <Input className={CHAMP} value={a.cabinet_nom ?? ''} onChange={e => set('cabinet_nom', e.target.value)}
                 placeholder="Fiduciaire Atlas" />
             </Champ>
             <Choice label="Taille de votre portefeuille clients *"
               options={PORTEFEUILLE} value={a.portefeuille} onChange={v => set('portefeuille', v)} />
             <Champ label="Logiciel comptable actuel">
-              <Input value={a.logiciel_actuel ?? ''} onChange={e => set('logiciel_actuel', e.target.value)}
+              <Input className={CHAMP} value={a.logiciel_actuel ?? ''} onChange={e => set('logiciel_actuel', e.target.value)}
                 placeholder="Sage, Ciel, Excel…" />
             </Champ>
           </>
@@ -311,7 +369,7 @@ export default function FeedbackWizard({ defaultNom = '', mode = 'compte' }) {
               minLabel="très peu" maxLabel="énorme" />
             <Champ label="Décrivez votre pire expérience avec la saisie de factures"
               hint="C'est souvent là qu'on apprend le plus">
-              <Textarea rows={4} value={a.pire_experience ?? ''}
+              <Textarea className={ZONE} rows={4} value={a.pire_experience ?? ''}
                 onChange={e => set('pire_experience', e.target.value)}
                 placeholder="Un lot de 300 factures reçues la veille de la clôture…" />
             </Champ>
@@ -330,11 +388,11 @@ export default function FeedbackWizard({ defaultNom = '', mode = 'compte' }) {
               min={1} max={5} value={a.review_room} onChange={v => set('review_room', v)}
               minLabel="perdu" maxLabel="évident" />
             <Champ label="Qu'est-ce qui vous a le plus surpris ?">
-              <Textarea rows={3} value={a.surprise ?? ''} onChange={e => set('surprise', e.target.value)}
+              <Textarea className={ZONE} rows={3} value={a.surprise ?? ''} onChange={e => set('surprise', e.target.value)}
                 placeholder="En bien comme en mal." />
             </Champ>
             <Champ label="Y a-t-il eu des bugs ou des moments de blocage ?">
-              <Textarea rows={3} value={a.bugs ?? ''} onChange={e => set('bugs', e.target.value)}
+              <Textarea className={ZONE} rows={3} value={a.bugs ?? ''} onChange={e => set('bugs', e.target.value)}
                 placeholder="Même un détail agaçant nous intéresse." />
             </Champ>
           </>
@@ -352,7 +410,7 @@ export default function FeedbackWizard({ defaultNom = '', mode = 'compte' }) {
             <Choice label="Seriez-vous prêt à payer dès la sortie officielle ?"
               options={PAIEMENT} value={a.pret_a_payer} onChange={v => set('pret_a_payer', v)} />
             <Champ label="Connaissez-vous d'autres cabinets que ça intéresserait ?">
-              <Input value={a.autres_cabinets ?? ''} onChange={e => set('autres_cabinets', e.target.value)}
+              <Input className={CHAMP} value={a.autres_cabinets ?? ''} onChange={e => set('autres_cabinets', e.target.value)}
                 placeholder="Un nom, un contact — sans engagement" />
             </Champ>
           </>

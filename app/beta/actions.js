@@ -41,6 +41,15 @@ export async function submitBetaRequest(payload) {
       return { ok: false, error: `Trop de demandes. Réessayez dans ${formatRetryDelay(rl.retryAfterSec)}.` }
     }
 
+    // Piège à robots : un champ invisible qu'un humain ne peut pas remplir, et
+    // qu'un automate remplit précisément parce qu'il le voit dans le HTML.
+    // On répond « ok » plutôt qu'une erreur : signaler le refus apprendrait au
+    // robot à contourner le piège au prochain passage.
+    if (typeof payload?.site_web === 'string' && payload.site_web.trim() !== '') {
+      logger.warn('Demande d\'accès bêta écartée — piège rempli', { ip })
+      return { ok: true }
+    }
+
     const nom = sanitizeText(payload?.nom_complet ?? '', 120)
     if (!nom) return { ok: false, error: 'Le nom complet est requis.' }
 
@@ -49,6 +58,20 @@ export async function submitBetaRequest(payload) {
 
     const portefeuille = pick(payload?.portefeuille, PORTEFEUILLE)
     if (!portefeuille) return { ok: false, error: 'La taille du portefeuille est requise.' }
+
+    // Une même adresse ne dépose qu'une demande. Sans cela, un formulaire public
+    // se remplit de doublons — quelqu'un qui rafraîchit, ou qui n'a pas vu la
+    // confirmation — et les répartitions qui servent à fixer un prix comptent
+    // deux fois le même avis. On répond « ok » : du point de vue du visiteur, sa
+    // demande est bien enregistrée.
+    const dejaVue = await prisma.betaFeedback.findFirst({
+      where:  { email, user_id: null },
+      select: { id: true },
+    })
+    if (dejaVue) {
+      logger.info('Demande d\'accès déjà enregistrée pour cette adresse', { email })
+      return { ok: true }
+    }
 
     await prisma.betaFeedback.create({
       data: {

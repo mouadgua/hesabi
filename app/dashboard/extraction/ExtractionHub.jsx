@@ -339,6 +339,8 @@ export default function ExtractionHub({
   async function uploadWithPool(files, getDossierId, batchId, batchTotal, startCount) {
     setUploadProgress({ current: startCount, total: batchTotal })
     const uploaded = []
+    // Fichiers déjà présents : comptés à part, ni ajoutés à la liste ni facturés.
+    const duplicates = []
     let doneCount = startCount
     let idx = 0
 
@@ -357,7 +359,22 @@ export default function ExtractionHub({
         try {
           const res = await fetch('/api/upload', { method: 'POST', body: fd })
           const data = await res.json()
-          if (res.ok) {
+
+          // Un doublon revient en HTTP 200 avec { duplicate, existingDocument }
+          // et SANS documentId. Le code ne testait que res.ok : il ajoutait donc
+          // une ligne portant `id: undefined` — incliquable, et en double dès le
+          // deuxième doublon du lot, d'où l'avertissement de clé React. Pire, il
+          // décomptait un crédit que le serveur n'avait pas facturé.
+          if (data?.duplicate) {
+            duplicates.push(file.name)
+            // Marqué traité : le fichier a bien été soumis et statué. Sans cela
+            // il serait renvoyé à chaque relance du même lot, pour être écarté
+            // de nouveau à chaque fois.
+            markFingerprintDone(fingerprintOf(file), batchId)
+            return true   // traité, mais ni ajouté à la liste ni facturé
+          }
+
+          if (res.ok && data?.documentId) {
             uploaded.push({
               id:            data.documentId,
               nom_fichier:   file.name,
@@ -401,10 +418,25 @@ export default function ExtractionHub({
     await Promise.all(Array.from({ length: workerCount }, worker))
 
     setUploadProgress(null)
+    if (duplicates.length > 0) {
+      toast.info(
+        `${duplicates.length} fichier${duplicates.length > 1 ? 's étaient déjà présents' : ' était déjà présent'} ` +
+        `et ${duplicates.length > 1 ? 'ont' : 'a'} été ignoré${duplicates.length > 1 ? 's' : ''} — aucun crédit consommé.`,
+        { duration: 6000 }
+      )
+    }
+
     if (uploaded.length > 0) {
-      setDocs(prev => [...uploaded, ...prev])
+      // Déduplication à l'insertion : la cause du doublon est corrigée plus
+      // haut, mais une liste d'affichage ne doit jamais pouvoir contenir deux
+      // fois le même identifiant — c'est ce qui produit des lignes fantômes et
+      // des clés React en conflit.
+      setDocs(prev => {
+        const vus = new Set(prev.map(d => d.id))
+        return [...uploaded.filter(d => d.id && !vus.has(d.id)), ...prev]
+      })
       setCredits(c => c - uploaded.length)
-      const failedCount = files.length - uploaded.length
+      const failedCount = files.length - uploaded.length - duplicates.length
       toast.success(
         `${uploaded.length} fichier${uploaded.length > 1 ? 's uploadés' : ' uploadé'}` +
         (failedCount > 0 ? ` (${failedCount} en échec — relancez le même lot pour les reprendre).` : '.')
@@ -422,7 +454,14 @@ export default function ExtractionHub({
     const dupes = findDuplicates(valid)
     if (dupes.length > 0) {
       const names = dupes.map(f => f.name).join(', ')
-      toast.warning(`Fichier déjà présent : ${names}. L'upload continuera quand même.`)
+      // Ce contrôle compare les NOMS avec la liste affichée. La déduplication
+      // réelle se fait sur le contenu, côté serveur : un même nom avec un
+      // contenu différent sera bien envoyé, un contenu identique sera écarté
+      // sans consommer de crédit. Le message disait « l'upload continuera quand
+      // même », ce qui laissait croire à un doublon accepté.
+      toast.warning(
+        `Nom déjà utilisé : ${names}. Si le contenu est identique, le fichier sera ignoré sans consommer de crédit.`
+      )
     }
 
     const { batchId, toUpload, total, alreadyDoneCount } = prepareBatch(valid)

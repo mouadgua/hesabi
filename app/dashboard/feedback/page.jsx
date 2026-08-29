@@ -1,7 +1,7 @@
 import { createClient } from '@/utils/supabase/server'
 import prisma from '@/lib/prisma'
 import { redirect } from 'next/navigation'
-import FeedbackWizard from './FeedbackWizard'
+import FeedbackWizard from '@/components/feedback-wizard'
 
 export const metadata = { title: 'Votre avis' }
 

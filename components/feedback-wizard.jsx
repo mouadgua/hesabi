@@ -11,7 +11,8 @@ import {
   ArrowLeftIcon, ArrowRightIcon, CheckIcon, Loader2Icon,
   UserIcon, ClockIcon, SparklesIcon, WalletIcon, PartyPopperIcon,
 } from 'lucide-react'
-import { submitBetaFeedback } from './actions'
+import { submitBetaFeedback } from '@/app/dashboard/feedback/actions'
+import { submitBetaRequest } from '@/app/beta/actions'
 
 /**
  * Questionnaire bêta en quatre temps.
@@ -25,7 +26,21 @@ import { submitBetaFeedback } from './actions'
  * qui ferme l'onglet au milieu ne recommence pas de zéro. La clé est effacée à
  * l'envoi.
  */
-const DRAFT_KEY = 'hesabi_feedback_draft'
+/**
+ * Deux usages, un seul questionnaire.
+ *
+ *   mode="compte" — depuis l'espace connecté, quatre étapes. L'identité vient
+ *                   de la session, et les questions sur le produit ont un sens
+ *                   puisque la personne s'en est servie.
+ *
+ *   mode="public" — depuis le site, sans compte, trois étapes. L'email devient
+ *                   obligatoire — c'est le seul moyen de recontacter — et les
+ *                   questions sur la précision de l'IA ou la page de
+ *                   vérification sont retirées : demander à quelqu'un de noter
+ *                   un produit qu'il n'a jamais ouvert ne produit pas une
+ *                   donnée, ça produit du bruit.
+ */
+const DRAFT_BASE = 'hesabi_feedback_draft'
 
 const PORTEFEUILLE = ['<20', '20-50', '50-100', '>100']
 const RECEPTION    = ['WhatsApp', 'Email', 'Physique', 'Mélange']
@@ -34,12 +49,13 @@ const BUDGET       = ['<200 DH', '200-500 DH', '500-1000 DH', '>1000 DH']
 const FACTURATION  = ['Abonnement mensuel fixe', 'Par document traité', 'Par client géré', "À l'usage", "N'importe"]
 const PAIEMENT     = ['Oui immédiatement', "Oui après 1 mois d'essai", 'Peut-être', 'Non']
 
-const STEPS = [
-  { titre: 'Votre cabinet',      sous: 'Pour situer vos réponses',                Icon: UserIcon },
-  { titre: 'Votre quotidien',    sous: 'Comment vous travaillez aujourd\'hui',    Icon: ClockIcon },
-  { titre: 'Hesabi à l\'usage',  sous: 'Ce qui marche, ce qui ne marche pas',     Icon: SparklesIcon },
-  { titre: 'Et demain',          sous: 'Ce que vous attendez de la suite',        Icon: WalletIcon },
-]
+const ETAPE_PROFIL    = { cle: 'profil',   titre: 'Votre cabinet',     sous: 'Pour situer vos réponses',             Icon: UserIcon }
+const ETAPE_QUOTIDIEN = { cle: 'quotidien', titre: 'Votre quotidien',   sous: 'Comment vous travaillez aujourd\'hui', Icon: ClockIcon }
+const ETAPE_PRODUIT   = { cle: 'produit',  titre: 'Hesabi à l\'usage',  sous: 'Ce qui marche, ce qui ne marche pas',  Icon: SparklesIcon }
+const ETAPE_DEMAIN    = { cle: 'demain',   titre: 'Et demain',         sous: 'Ce que vous attendez de la suite',     Icon: WalletIcon }
+
+const STEPS_COMPTE = [ETAPE_PROFIL, ETAPE_QUOTIDIEN, ETAPE_PRODUIT, ETAPE_DEMAIN]
+const STEPS_PUBLIC = [ETAPE_PROFIL, ETAPE_QUOTIDIEN, ETAPE_DEMAIN]
 
 // ── Éléments de saisie ────────────────────────────────────────────────────────
 
@@ -140,7 +156,12 @@ function Champ({ label, children, hint }) {
 
 // ── Composant principal ───────────────────────────────────────────────────────
 
-export default function FeedbackWizard({ defaultNom = '' }) {
+export default function FeedbackWizard({ defaultNom = '', mode = 'compte' }) {
+  const publik = mode === 'public'
+  const STEPS  = publik ? STEPS_PUBLIC : STEPS_COMPTE
+  // Brouillons séparés : un visiteur qui crée ensuite un compte ne doit pas
+  // retrouver ses réponses publiques préremplies dans le questionnaire interne.
+  const draftKey = `${DRAFT_BASE}_${mode}`
   const router = useRouter()
   const [step, setStep] = useState(0)
   const [sending, setSending] = useState(false)
@@ -150,29 +171,30 @@ export default function FeedbackWizard({ defaultNom = '' }) {
   // Reprise d'un brouillon
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(DRAFT_KEY)
+      const raw = localStorage.getItem(draftKey)
       if (raw) setA(prev => ({ ...prev, ...JSON.parse(raw) }))
     } catch { /* stockage indisponible — le formulaire marche quand même */ }
   }, [])
 
   useEffect(() => {
     if (done) return
-    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(a)) } catch { /* idem */ }
+    try { localStorage.setItem(draftKey, JSON.stringify(a)) } catch { /* idem */ }
   }, [a, done])
 
   const set = (k, v) => setA(prev => ({ ...prev, [k]: v }))
 
   // Le premier écran porte les deux seules questions obligatoires : on ne bloque
   // qu'ici, et jamais sur la suite — un retour partiel vaut mieux qu'un abandon.
-  const premierEcranComplet = Boolean(a.nom_complet?.trim() && a.portefeuille)
+  const emailValide = !publik || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a.email?.trim() ?? '')
+  const premierEcranComplet = Boolean(a.nom_complet?.trim() && a.portefeuille && emailValide)
   const dernier = step === STEPS.length - 1
 
   async function envoyer() {
     setSending(true)
-    const res = await submitBetaFeedback(a)
+    const res = publik ? await submitBetaRequest(a) : await submitBetaFeedback(a)
     setSending(false)
     if (!res?.ok) { toast.error(res?.error ?? 'Envoi impossible.'); return }
-    try { localStorage.removeItem(DRAFT_KEY) } catch {}
+    try { localStorage.removeItem(draftKey) } catch {}
     setDone(true)
   }
 
@@ -195,7 +217,9 @@ export default function FeedbackWizard({ defaultNom = '' }) {
     )
   }
 
-  const { titre, sous, Icon } = STEPS[step]
+  // Les écrans sont désignés par leur clé et non par leur rang : en mode
+  // public « demain » est la 3e étape et non la 4e, un index se décalerait.
+  const { titre, sous, Icon, cle } = STEPS[step]
 
   return (
     <div className="max-w-2xl mx-auto p-4 md:p-8 space-y-6">
@@ -224,12 +248,18 @@ export default function FeedbackWizard({ defaultNom = '' }) {
 
       <div className="rounded-2xl border border-slate-200/60 dark:border-white/[0.07] bg-white/70 dark:bg-white/[0.04] backdrop-blur-xl shadow-sm p-5 md:p-6 space-y-6">
 
-        {step === 0 && (
+        {cle === 'profil' && (
           <>
             <Champ label="Nom complet *">
               <Input value={a.nom_complet ?? ''} onChange={e => set('nom_complet', e.target.value)}
                 placeholder="Mouad Guarraz" />
             </Champ>
+            {publik && (
+              <Champ label="Email *" hint="C'est par là qu'on vous enverra votre accès.">
+                <Input type="email" value={a.email ?? ''} onChange={e => set('email', e.target.value)}
+                  placeholder="contact@cabinet.ma" />
+              </Champ>
+            )}
             <Champ label="Nom du cabinet">
               <Input value={a.cabinet_nom ?? ''} onChange={e => set('cabinet_nom', e.target.value)}
                 placeholder="Fiduciaire Atlas" />
@@ -243,7 +273,7 @@ export default function FeedbackWizard({ defaultNom = '' }) {
           </>
         )}
 
-        {step === 1 && (
+        {cle === 'quotidien' && (
           <>
             <MultiChoice label="Comment recevez-vous les justificatifs aujourd'hui ?"
               hint="Plusieurs réponses possibles"
@@ -260,7 +290,7 @@ export default function FeedbackWizard({ defaultNom = '' }) {
           </>
         )}
 
-        {step === 2 && (
+        {cle === 'produit' && (
           <>
             <Scale label="De 0 à 5, recommanderiez-vous Hesabi à un confrère ?"
               min={0} max={5} value={a.nps} onChange={v => set('nps', v)}
@@ -282,7 +312,7 @@ export default function FeedbackWizard({ defaultNom = '' }) {
           </>
         )}
 
-        {step === 3 && (
+        {cle === 'demain' && (
           <>
             <Choice label="Préféreriez-vous que vos clients déposent eux-mêmes leurs factures ?"
               options={PORTAIL} value={a.portail_client} onChange={v => set('portail_client', v)} />
@@ -308,7 +338,7 @@ export default function FeedbackWizard({ defaultNom = '' }) {
         </Button>
 
         {step === 0 && !premierEcranComplet && (
-          <span className="text-xs text-slate-400 text-right">Nom et portefeuille requis</span>
+          <span className="text-xs text-slate-400 text-right">{publik ? 'Nom, email et portefeuille requis' : 'Nom et portefeuille requis'}</span>
         )}
 
         {dernier ? (

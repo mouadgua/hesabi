@@ -301,9 +301,13 @@ export default function LandingPage() {
 
           {/* CTAs */}
           <div className="anim-cta flex flex-col sm:flex-row items-center justify-center gap-4" style={{ opacity: 0 }}>
-            <Link href="/register">
+            {/* Vers /beta et non /register : l'inscription exige une clé bêta,
+                donc un visiteur qui n'en a pas se heurtait à « Clé d'accès
+                requise » après avoir cliqué sur l'appel principal. La demande
+                d'accès le recueille au lieu de le perdre. */}
+            <Link href="/beta">
               <button className="group bg-[#1D9E75] hover:bg-[#0F6E56] text-white rounded-full h-14 px-8 text-base font-bold shadow-[0_8px_32px_rgba(29,158,117,0.4)] transition-all hover:scale-105 hover:shadow-[0_12px_40px_rgba(29,158,117,0.5)] cursor-pointer">
-                Bêta gratuite
+                Demander un accès
                 <ArrowRightIcon className="inline size-4 ml-2 group-hover:translate-x-1 transition-transform" />
               </button>
             </Link>
@@ -524,9 +528,9 @@ export default function LandingPage() {
                 <strong className="text-white">15 extractions IA offertes</strong>.
                 {" "}Testez avec vos documents les plus complexes.
               </p>
-              <Link href="/register">
+              <Link href="/beta">
                 <button className="group bg-white hover:bg-[#E1F5EE] text-[#0F6E56] rounded-full h-14 px-10 text-base font-bold shadow-xl transition-all hover:scale-105 hover:shadow-2xl cursor-pointer">
-                  Démarrer mes extractions
+                  Demander mon accès
                   <ArrowRightIcon className="inline size-4 ml-2 group-hover:translate-x-1 transition-transform" />
                 </button>
               </Link>

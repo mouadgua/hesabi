@@ -56,11 +56,10 @@
     "@testing-library/react": "^16.3.2",
     "dotenv": "^17.4.2",
     "eslint": "^9",
-    "eslint-config-next": "16.2.4",
+    "eslint-config-next": "^16.3.3",
     "jest": "^30.4.2",
     "jest-environment-jsdom": "^30.4.1",
     "playwright": "^1.62.1",
-    "shadcn": "^4.8.0",
     "tailwindcss": "^4"
   },
   "overrides": {

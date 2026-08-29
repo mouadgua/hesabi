@@ -4,6 +4,7 @@ import NavigationProgress from "@/components/navigation-progress"
 import { Providers } from "./providers"
 import PublicAnalytics from '@/components/public-analytics'
 import { siteUrl } from '@/lib/site'
+import { headers } from 'next/headers'
 
 const sansFont = Plus_Jakarta_Sans({
   variable: "--font-sans",
@@ -74,7 +75,11 @@ export const metadata = {
   },
 }
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children }) {
+  // Le nonce posé par le middleware, relu ici pour le transmettre au script de
+  // thème. Sans lui la CSP stricte le bloque et l'éclair de thème revient.
+  const nonce = (await headers()).get('x-nonce') ?? undefined
+
   return (
     <html
       lang="fr"
@@ -83,7 +88,7 @@ export default function RootLayout({ children }) {
     >
       <body className="min-h-full flex flex-col font-sans">
         <NavigationProgress />
-        <Providers>
+        <Providers nonce={nonce}>
           {children}
           <PublicAnalytics />
         </Providers>

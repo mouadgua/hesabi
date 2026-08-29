@@ -19,13 +19,24 @@ function ThemedToaster() {
   )
 }
 
-export function Providers({ children }) {
+/**
+ * @param {{ children: React.ReactNode, nonce?: string }} props
+ *   `nonce` vient de l'en-tête x-nonce posé par le middleware.
+ *
+ *   next-themes injecte un script inline qui applique le thème AVANT le premier
+ *   rendu, pour éviter l'éclair de thème clair. Sans nonce, la CSP stricte des
+ *   pages authentifiées le bloquait : l'éclair revenait, et chaque navigation
+ *   inscrivait une violation dans la console — 26 sur un simple parcours des
+ *   pages, qui noyaient tout le reste.
+ */
+export function Providers({ children, nonce }) {
   return (
     <ThemeProvider
       attribute="class"
       defaultTheme="light"
       disableTransitionOnChange
-      scriptProps={{ suppressHydrationWarning: true }}
+      nonce={nonce}
+      scriptProps={{ suppressHydrationWarning: true, nonce }}
     >
       {children}
       <ThemedToaster />

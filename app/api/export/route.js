@@ -286,8 +286,15 @@ export async function POST(request) {
     })
     if (!utilisateur?.cabinet_id) return new NextResponse('Cabinet introuvable', { status: 403 })
 
-    const formData = await request.formData()
-    const format   = formData.get('format') || 'csv'
+    // Sorti du try général : un corps mal formé — mauvais Content-Type, requête
+    // construite à la main — est une entrée invalide, pas une panne. Il
+    // renvoyait 500 et remontait donc comme incident alors qu'il n'y a rien à
+    // corriger côté serveur.
+    let formData
+    try { formData = await request.formData() }
+    catch { return new NextResponse('Requête invalide.', { status: 400 }) }
+
+    const format = formData.get('format') || 'csv'
 
     const cfg = parseConfig(formData)
     const { lang, columns: colDefs, groupBy, subtotals } = cfg

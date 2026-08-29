@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { ChevronDownIcon, MailIcon, PhoneIcon, SparklesIcon, ClipboardListIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import Link from 'next/link'
 
 const FAQ = [
   {
@@ -83,17 +84,20 @@ export default function SupportPage() {
           <div className="flex-1">
             <h2 className="text-sm font-bold text-slate-800 dark:text-slate-200 mb-0.5">Donnez votre avis</h2>
             <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">
-              2 minutes pour nous aider à améliorer Hesabi. Vos retours sont lus et pris en compte.
+              Quatre courtes étapes. Vos réponses décident de ce qu'on corrige en premier, et du prix à la sortie de la bêta.
             </p>
-            <a
-              href="https://forms.gle/votre-form-id"
-              target="_blank"
-              rel="noopener noreferrer"
+            {/* Le lien pointait vers « forms.gle/votre-form-id » — un gabarit
+                jamais remplacé, donc un bouton qui ne menait nulle part. Le
+                questionnaire vit désormais dans l'application : les réponses
+                arrivent en base plutôt que dans un service tiers, et se
+                recoupent avec l'usage réel du cabinet. */}
+            <Link
+              href="/dashboard/feedback"
               className="inline-flex items-center gap-2 rounded-xl bg-[#1D9E75] px-4 py-2 text-[13px] font-medium text-white transition-all hover:opacity-90"
             >
               <ClipboardListIcon className="size-4" />
-              Remplir le formulaire de feedback
-            </a>
+              Répondre au questionnaire
+            </Link>
           </div>
         </div>
       </div>

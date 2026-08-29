@@ -345,3 +345,47 @@ enum CompteSource {
   SUGGESTION_IA
   VALIDATION_MANUELLE
 }
+
+/// Retours structurés des bêta-testeurs.
+///
+/// Les réponses sont stockées en colonnes explicites plutôt qu'en un seul bloc
+/// JSON : ce questionnaire sert à décider d'un prix et d'un modèle de
+/// facturation, donc ses réponses doivent pouvoir être comptées et croisées
+/// sans avoir à désérialiser quoi que ce soit.
+///
+/// Presque tout est nullable : une seule question est obligatoire dans le
+/// formulaire, et un retour partiel vaut mieux qu'un abandon.
+model BetaFeedback {
+  id                  String   @id @default(cuid())
+  user_id             String?
+  email               String?
+
+  // Profil
+  nom_complet         String
+  cabinet_nom         String?
+  portefeuille        String   // "<20" | "20-50" | "50-100" | ">100"
+  logiciel_actuel     String?
+
+  // Manière de travailler aujourd'hui
+  reception           String[] // WhatsApp | Email | Physique | Mélange
+  heures_saisie       Int?     // échelle 1 à 11
+  pire_experience     String?  @db.Text
+
+  // Perception du produit
+  nps                 Int?     // 0 à 5
+  precision_ia        Int?     // 1 à 5
+  review_room         Int?     // 1 à 5
+  surprise            String?  @db.Text
+  bugs                String?  @db.Text
+
+  // Modèle économique
+  portail_client      String?
+  budget_mensuel      String?
+  modele_facturation  String[]
+  pret_a_payer        String?
+  autres_cabinets     String?
+
+  createdAt           DateTime @default(now())
+
+  @@index([createdAt])
+}

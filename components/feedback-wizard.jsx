@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  ArrowLeftIcon, ArrowRightIcon, CheckIcon, Loader2Icon,
+  ArrowLeftIcon, ArrowRightIcon, CheckIcon, Loader2Icon, XIcon,
   UserIcon, ClockIcon, SparklesIcon, WalletIcon, PartyPopperIcon,
 } from 'lucide-react'
 import { submitBetaFeedback } from '@/app/dashboard/feedback/actions'
@@ -189,6 +189,13 @@ export default function FeedbackWizard({ defaultNom = '', mode = 'compte' }) {
   const premierEcranComplet = Boolean(a.nom_complet?.trim() && a.portefeuille && emailValide)
   const dernier = step === STEPS.length - 1
 
+  // Quitter renvoie là d'où l'on vient : le tableau de bord pour un compte,
+  // l'accueil pour un visiteur. Le brouillon reste en mémoire, donc revenir
+  // reprend là où on s'était arrêté.
+  function quitter() {
+    router.push(publik ? '/' : '/dashboard')
+  }
+
   async function envoyer() {
     setSending(true)
     const res = publik ? await submitBetaRequest(a) : await submitBetaFeedback(a)
@@ -200,7 +207,7 @@ export default function FeedbackWizard({ defaultNom = '', mode = 'compte' }) {
 
   if (done) {
     return (
-      <div className="max-w-xl mx-auto text-center py-16 px-6 space-y-4">
+      <div className="fixed inset-0 z-40 flex flex-col items-center justify-center bg-slate-50 dark:bg-[#0d1a11] text-center px-6 space-y-4">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#E1F5EE] dark:bg-[#1D9E75]/15">
           <PartyPopperIcon className="w-7 h-7 text-[#1D9E75]" />
         </div>
@@ -210,8 +217,8 @@ export default function FeedbackWizard({ defaultNom = '', mode = 'compte' }) {
           en premier, et à quel prix Hesabi sortira de la bêta.
         </p>
         <Button className="bg-[#1D9E75] hover:bg-[#0F6E56] text-white mt-2"
-          onClick={() => router.push('/dashboard')}>
-          Retour au tableau de bord
+          onClick={quitter}>
+          {publik ? "Retour à l'accueil" : 'Retour au tableau de bord'}
         </Button>
       </div>
     )
@@ -222,31 +229,52 @@ export default function FeedbackWizard({ defaultNom = '', mode = 'compte' }) {
   const { titre, sous, Icon, cle } = STEPS[step]
 
   return (
-    <div className="max-w-2xl mx-auto p-4 md:p-8 space-y-6">
+    // Plein écran plutôt qu'une carte au milieu : dix-sept questions dans un
+    // encart étroit donnent l'impression d'un formulaire administratif. En
+    // occupant la page, chaque étape respire et se lit comme une seule question.
+    //
+    // Trois zones : l'en-tête et le pied restent en place, seul le contenu
+    // défile. La progression et les boutons ne disparaissent donc jamais, même
+    // sur l'étape la plus longue.
+    <div className="fixed inset-0 z-40 flex flex-col bg-slate-50 dark:bg-[#0d1a11]">
 
-      {/* Progression — dit où on en est et combien il reste */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#E1F5EE] dark:bg-[#1D9E75]/15">
-            <Icon className="w-5 h-5 text-[#1D9E75]" />
+      {/* En-tête */}
+      <header className="shrink-0 border-b border-slate-200/70 dark:border-white/[0.07] bg-white/80 dark:bg-white/[0.03] backdrop-blur-xl">
+        <div className="max-w-3xl mx-auto px-4 md:px-8 py-4 space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#E1F5EE] dark:bg-[#1D9E75]/15">
+              <Icon className="w-5 h-5 text-[#1D9E75]" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-lg md:text-xl font-bold text-slate-800 dark:text-slate-100 truncate">{titre}</h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400">{sous}</p>
+            </div>
+            <span className="ml-auto text-xs text-slate-400 tabular-nums shrink-0 hidden sm:inline">
+              Étape {step + 1} / {STEPS.length}
+            </span>
+            {/* Quitter — les réponses sont déjà en mémoire, donc partir ne coûte
+                rien. Le dire évite qu'on remplisse par crainte de tout perdre. */}
+            <button
+              type="button"
+              onClick={quitter}
+              title="Quitter — vos réponses sont conservées"
+              className="shrink-0 p-2 -mr-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/[0.06] transition-colors cursor-pointer"
+            >
+              <XIcon className="w-5 h-5" />
+            </button>
           </div>
-          <div className="min-w-0">
-            <h1 className="text-lg font-bold text-slate-800 dark:text-slate-100 truncate">{titre}</h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">{sous}</p>
+          <div className="flex gap-1.5">
+            {STEPS.map((_, i) => (
+              <div key={i} className={`h-1 flex-1 rounded-full transition-colors
+                ${i <= step ? 'bg-[#1D9E75]' : 'bg-slate-200 dark:bg-white/[0.08]'}`} />
+            ))}
           </div>
-          <span className="ml-auto text-xs text-slate-400 tabular-nums shrink-0">
-            Étape {step + 1} / {STEPS.length}
-          </span>
         </div>
-        <div className="flex gap-1.5">
-          {STEPS.map((_, i) => (
-            <div key={i} className={`h-1 flex-1 rounded-full transition-colors
-              ${i <= step ? 'bg-[#1D9E75]' : 'bg-slate-200 dark:bg-white/[0.08]'}`} />
-          ))}
-        </div>
-      </div>
+      </header>
 
-      <div className="rounded-2xl border border-slate-200/60 dark:border-white/[0.07] bg-white/70 dark:bg-white/[0.04] backdrop-blur-xl shadow-sm p-5 md:p-6 space-y-6">
+      {/* Contenu — seule zone qui défile */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl mx-auto px-4 md:px-8 py-6 md:py-10 space-y-8">
 
         {cle === 'profil' && (
           <>
@@ -329,37 +357,47 @@ export default function FeedbackWizard({ defaultNom = '', mode = 'compte' }) {
             </Champ>
           </>
         )}
+        </div>
       </div>
 
-      <div className="flex items-center justify-between gap-3">
-        <Button variant="outline" disabled={step === 0 || sending}
-          onClick={() => setStep(s => s - 1)} className="gap-1.5">
-          <ArrowLeftIcon className="w-4 h-4" /> Précédent
-        </Button>
+      {/* Pied fixe — les boutons restent atteignables sans avoir à faire
+          défiler jusqu'en bas d'une étape longue. */}
+      <footer className="shrink-0 border-t border-slate-200/70 dark:border-white/[0.07] bg-white/80 dark:bg-white/[0.03] backdrop-blur-xl">
+        <div className="max-w-3xl mx-auto px-4 md:px-8 py-4 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            {/* À la première étape, « Précédent » ne mène nulle part : il devient
+                la sortie, ce qui évite un bouton mort dans le coin de l'écran. */}
+            <Button variant="outline" disabled={sending}
+              onClick={() => (step === 0 ? quitter() : setStep(s => s - 1))} className="gap-1.5">
+              <ArrowLeftIcon className="w-4 h-4" /> {step === 0 ? 'Quitter' : 'Précédent'}
+            </Button>
 
-        {step === 0 && !premierEcranComplet && (
-          <span className="text-xs text-slate-400 text-right">{publik ? 'Nom, email et portefeuille requis' : 'Nom et portefeuille requis'}</span>
-        )}
+            <span className="text-xs text-slate-400 tabular-nums sm:hidden">
+              {step + 1} / {STEPS.length}
+            </span>
 
-        {dernier ? (
-          <Button onClick={envoyer} disabled={sending || !premierEcranComplet}
-            className="gap-1.5 bg-[#1D9E75] hover:bg-[#0F6E56] text-white">
-            {sending ? <Loader2Icon className="w-4 h-4 animate-spin" /> : <CheckIcon className="w-4 h-4" />}
-            {sending ? 'Envoi…' : 'Envoyer mes réponses'}
-          </Button>
-        ) : (
-          <Button onClick={() => setStep(s => s + 1)}
-            disabled={step === 0 && !premierEcranComplet}
-            className="gap-1.5 bg-[#1D9E75] hover:bg-[#0F6E56] text-white">
-            Suivant <ArrowRightIcon className="w-4 h-4" />
-          </Button>
-        )}
-      </div>
+            {dernier ? (
+              <Button onClick={envoyer} disabled={sending || !premierEcranComplet}
+                className="gap-1.5 bg-[#1D9E75] hover:bg-[#0F6E56] text-white">
+                {sending ? <Loader2Icon className="w-4 h-4 animate-spin" /> : <CheckIcon className="w-4 h-4" />}
+                {sending ? 'Envoi…' : 'Envoyer mes réponses'}
+              </Button>
+            ) : (
+              <Button onClick={() => setStep(s => s + 1)}
+                disabled={step === 0 && !premierEcranComplet}
+                className="gap-1.5 bg-[#1D9E75] hover:bg-[#0F6E56] text-white">
+                Suivant <ArrowRightIcon className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
 
-      <p className="text-[11px] text-center text-slate-400">
-        Vos réponses sont enregistrées au fur et à mesure dans ce navigateur —
-        vous pouvez fermer et revenir.
-      </p>
+          <p className="text-[11px] text-center text-slate-400">
+            {step === 0 && !premierEcranComplet
+              ? (publik ? 'Nom, email et portefeuille sont requis pour continuer.' : 'Nom et portefeuille sont requis pour continuer.')
+              : 'Vos réponses sont enregistrées au fur et à mesure — vous pouvez quitter et revenir.'}
+          </p>
+        </div>
+      </footer>
     </div>
   )
 }

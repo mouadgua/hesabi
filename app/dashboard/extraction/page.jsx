@@ -29,7 +29,7 @@ export default async function ExtractionPage({ searchParams }) {
   const initialStatut = VALID_STATUTS.has(params?.statut) ? params.statut : ''
   const initialType   = VALID_TYPES.has(params?.type)     ? params.type   : ''
 
-  const [templates, cabinet, rawDocs, activeClient] = await Promise.all([
+  const [templates, cabinet, rawDocs, activeClient, dossiers] = await Promise.all([
     prisma.templateExtraction.findMany({
       where: { cabinet_id: utilisateur.cabinet_id },
       orderBy: { createdAt: 'desc' },
@@ -54,6 +54,17 @@ export default async function ExtractionPage({ searchParams }) {
           select: { id: true, nom_entreprise: true },
         })
       : null,
+    // Arborescence des dossiers du cabinet. Chargée entière plutôt que niveau
+    // par niveau : un cabinet en compte quelques dizaines, et la parcourir
+    // côté navigateur évite un aller-retour à chaque ouverture de dossier.
+    prisma.dossier.findMany({
+      where: {
+        client: { cabinet_id: utilisateur.cabinet_id },
+        ...(activeClientId ? { client_id: activeClientId } : {}),
+      },
+      select: { id: true, nom: true, parent_id: true, client_id: true },
+      orderBy: { nom: 'asc' },
+    }),
   ])
 
   const documents = rawDocs.map(d => ({
@@ -72,6 +83,7 @@ export default async function ExtractionPage({ searchParams }) {
   return (
     <ExtractionHub
       initialDocuments={documents}
+      dossiers={dossiers}
       templates={templates}
       credits={cabinet?.credits ?? 0}
       activeClient={activeClient ? { id: activeClient.id, nom: activeClient.nom_entreprise } : null}

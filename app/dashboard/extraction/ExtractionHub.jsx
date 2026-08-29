@@ -129,6 +129,7 @@ function ConfidenceBadge({ confidence }) {
 
 export default function ExtractionHub({
   initialDocuments, templates, credits: initialCredits, activeClient,
+  dossiers = [],
   initialSearch = '', initialStatut = '', initialType = '',
 }) {
   const router = useRouter()
@@ -151,6 +152,9 @@ export default function ExtractionHub({
   const [creditsModal, setCreditsModal] = useState(null) // { files, folderGetter, available }
   const [aiError, setAiError] = useState(null)
   const [previewDoc, setPreviewDoc] = useState(null)
+  // null = racine. On garde l'identifiant plutôt que le chemin : un dossier
+  // renommé ou déplacé ne casse pas la position courante.
+  const [dossierCourant, setDossierCourant] = useState(null)
   const [isIOS, setIsIOS] = useState(false)
   const [resumeBanner, setResumeBanner] = useState(null) // { batchId, total, done }
   const [, startTransition] = useTransition()
@@ -552,7 +556,32 @@ export default function ExtractionHub({
 
   // ── Filtered docs (search + status + type) ───────────────────────────────
 
+  // Dossiers directement contenus dans le dossier courant.
+  const sousDossiers = dossiers.filter(d => (d.parent_id ?? null) === dossierCourant)
+
+  // Fil d'Ariane, reconstruit en remontant les parents. La boucle est bornée :
+  // une donnée incohérente (un dossier se référençant lui-même) ferait sinon
+  // tourner le rendu à l'infini.
+  const chemin = (() => {
+    const parId = new Map(dossiers.map(d => [d.id, d]))
+    const out = []
+    let id = dossierCourant
+    let garde = 0
+    while (id && garde++ < 50) {
+      const d = parId.get(id)
+      if (!d) break
+      out.unshift(d)
+      id = d.parent_id ?? null
+    }
+    return out
+  })()
+
+  // Une recherche porte sur tout le cabinet, pas sur le dossier ouvert : chercher
+  // une facture en sachant déjà où elle est rangée n'aurait aucun intérêt.
+  const enRecherche = Boolean(query || statutFilter || typeFilter)
+
   const filteredDocs = docs.filter(doc => {
+    if (!enRecherche && (doc.dossier_id ?? null) !== dossierCourant) return false
     if (query) {
       const q = query.toLowerCase()
       const inName     = doc.nom_fichier?.toLowerCase().includes(q)
@@ -919,6 +948,37 @@ export default function ExtractionHub({
           </div>
         )}
 
+        {/* Fil d'Ariane — n'apparaît qu'une fois entré quelque part. À la racine
+            il n'apprendrait rien, et occuperait une ligne pour le dire.
+            Masqué pendant une recherche, dont les résultats viennent de partout. */}
+        {!enRecherche && chemin.length > 0 && (
+          <nav aria-label="Fil d'Ariane" className="flex items-center gap-1 flex-wrap text-[13px] px-0.5">
+            <button
+              type="button"
+              onClick={() => { setDossierCourant(null); setSelectedDocIds(new Set()) }}
+              className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400 hover:text-[#1D9E75] transition-colors cursor-pointer"
+            >
+              <FolderIcon className="w-3.5 h-3.5" /> Tous les documents
+            </button>
+            {chemin.map((d, i) => (
+              <span key={d.id} className="inline-flex items-center gap-1">
+                <ChevronRightIcon className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600" />
+                {i === chemin.length - 1 ? (
+                  <span className="font-medium text-slate-800 dark:text-slate-200">{d.nom}</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { setDossierCourant(d.id); setSelectedDocIds(new Set()) }}
+                    className="text-slate-500 dark:text-slate-400 hover:text-[#1D9E75] transition-colors cursor-pointer"
+                  >
+                    {d.nom}
+                  </button>
+                )}
+              </span>
+            ))}
+          </nav>
+        )}
+
         {/* ── Action bar ── */}
         {docs.length > 0 && (
           <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-white/80 dark:bg-white/[0.05] border border-slate-200/70 dark:border-white/[0.08] rounded-xl shadow-sm sticky top-2 z-20 backdrop-blur-xl">
@@ -999,7 +1059,11 @@ export default function ExtractionHub({
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Glissez vos fichiers ici ou cliquez pour uploader</p>
             <p className="text-xs text-slate-400 dark:text-slate-600">Vos extractions apparaîtront ici</p>
           </div>
-        ) : filteredDocs.length === 0 ? (
+        ) : (filteredDocs.length === 0 && (enRecherche || sousDossiers.length === 0)) ? (
+          // L'état vide doit tenir compte des sous-dossiers : un dossier qui ne
+          // contient que d'autres dossiers n'a aucun document à ce niveau, et
+          // affichait donc « aucun document » en masquant ce qu'il contenait
+          // réellement — un cul-de-sac dont on ne pouvait plus descendre.
           <div className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-slate-200 dark:border-white/[0.07] rounded-2xl bg-white/40 dark:bg-white/[0.02] backdrop-blur-sm space-y-2">
             <SearchIcon className="w-10 h-10 text-slate-300 dark:text-slate-700" />
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Aucun document ne correspond à la recherche</p>
@@ -1013,6 +1077,32 @@ export default function ExtractionHub({
           </div>
         ) : (
           <div className="bg-white/80 dark:bg-white/[0.04] border border-slate-200/70 dark:border-white/[0.07] rounded-xl overflow-hidden shadow-sm divide-y divide-slate-100/80 dark:divide-white/[0.04] backdrop-blur-xl">
+
+            {/* Dossiers du niveau courant, en tête — comme dans un explorateur.
+                Masqués pendant une recherche : les résultats viennent alors de
+                partout, et proposer d'« entrer » quelque part n'aurait pas de sens. */}
+            {!enRecherche && sousDossiers.map(d => {
+              const nbDocs = docs.filter(x => x.dossier_id === d.id).length
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => { setDossierCourant(d.id); setSelectedDocIds(new Set()) }}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50/70 dark:hover:bg-white/[0.03] cursor-pointer"
+                >
+                  <span className="w-4 shrink-0" />
+                  <FolderIcon className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span className="flex-1 min-w-0 text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
+                    {d.nom}
+                  </span>
+                  <span className="text-[11px] text-slate-400 tabular-nums shrink-0">
+                    {nbDocs} document{nbDocs > 1 ? 's' : ''}
+                  </span>
+                  <ChevronRightIcon className="w-4 h-4 text-slate-300 dark:text-slate-600 shrink-0" />
+                </button>
+              )
+            })}
+
             {filteredDocs.map(doc => {
               const isSelectable = doc.statut === 'A_EXTRAIRE'
               const isSelected   = selectedDocIds.has(doc.id)

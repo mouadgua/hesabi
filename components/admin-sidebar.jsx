@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboardIcon, UsersIcon, ZapIcon, BarChart2Icon,
-  MailIcon, StarIcon, KeyIcon, ScrollTextIcon, ShieldIcon,
+  MailIcon, StarIcon, KeyIcon, ScrollTextIcon, ShieldIcon, ClipboardListIcon,
   LogOutIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -16,6 +16,7 @@ const NAV = [
   { href: '/admin/visits',      label: 'Visits & Demo',      icon: BarChart2Icon },
   { href: '/admin/emails',      label: 'Emails Collectés',   icon: MailIcon },
   { href: '/admin/ratings',     label: 'Ratings & Inbox',    icon: StarIcon },
+  { href: '/admin/questionnaire', label: 'Questionnaire',    icon: ClipboardListIcon },
   { href: '/admin/beta',        label: 'Beta & Codes',       icon: KeyIcon },
   { href: '/admin/logs',        label: 'Logs',               icon: ScrollTextIcon },
 ]

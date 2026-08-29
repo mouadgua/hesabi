@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 
 // ── Admin guard ────────────────────────────────────────────────────────────────
-const ADMIN_EMAIL = 'mouadguarraz@gmail.com'
+import { ADMIN_EMAIL } from '@/lib/admin-email'
 
 // Rate limit: 5 failed admin attempts per IP per hour.
 // Uses global Map — survives hot reloads, works for single-process deployments.

@@ -12,7 +12,7 @@ import {
   UsersIcon, ShieldIcon, BookOpenIcon,
 } from "lucide-react"
 
-const ADMIN_EMAIL = 'mouadguarraz@gmail.com'
+import { ADMIN_EMAIL } from '@/lib/admin-email'
 import { logout } from "@/app/login/actions"
 import { toast } from "sonner"
 import {

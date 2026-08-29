@@ -126,8 +126,15 @@ export async function POST(request) {
   const rawIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '127.0.0.1'
   const ipHash = hashIp(rawIp)
 
+  // L'analyse du corps est sortie du try général : un JSON malformé est une
+  // entrée invalide, pas une panne du serveur. Il renvoyait 500, ce qui le
+  // faisait remonter comme incident alors qu'il n'y a rien à corriger côté
+  // serveur — et noyait les vraies erreurs sous ce bruit.
+  let body
+  try { body = await request.json() }
+  catch { return NextResponse.json({ error: 'Requête invalide.' }, { status: 400 }) }
+
   try {
-    const body = await request.json()
     const { email, mimeType, fileData, selectedFields, sessionId } = body ?? {}
 
     // ── Input validation ────────────────────────────────────────────────────────

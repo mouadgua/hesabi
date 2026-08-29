@@ -160,6 +160,7 @@ export default function ExtractionHub({
   const [suppression, setSuppression] = useState(null) // { id, nom }
   const [deplacement, setDeplacement] = useState(false)
   const [deplacerDossier, setDeplacerDossier] = useState(null) // { id, nom }
+  const [creation, setCreation] = useState(null) // { nom }
   const [isIOS, setIsIOS] = useState(false)
   const [resumeBanner, setResumeBanner] = useState(null) // { batchId, total, done }
   const [, startTransition] = useTransition()
@@ -512,7 +513,7 @@ export default function ExtractionHub({
         const res = await fetch('/api/folders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, parent_id: parentId }),
+          body: JSON.stringify({ name, parent_id: parentId, client_id: activeClient?.id ?? null }),
         })
         if (res.ok) { const d = await res.json(); pathToId[path] = d.dossierId }
       } catch { /* non-blocking */ }
@@ -582,9 +583,11 @@ export default function ExtractionHub({
   }
 
 
-  async function creerDossier() {
-    const nom = window.prompt('Nom du nouveau dossier')
-    if (!nom?.trim()) return
+  // window.prompt était la seule boîte native de l'application : impossible à
+  // styler, ignorée par certains navigateurs, et hors du thème sombre.
+  async function creerDossier(nomBrut) {
+    const nom = nomBrut?.trim()
+    if (!nom) return
     try {
       const res = await fetch('/api/folders', {
         method:  'POST',
@@ -592,10 +595,18 @@ export default function ExtractionHub({
         // La route lit `parent_id`, pas `parentId`. Envoyer la mauvaise clé
         // ne produisait aucune erreur : le champ était simplement ignoré et
         // tous les dossiers créés atterrissaient à la racine.
-        body:    JSON.stringify({ name: nom.trim(), parent_id: dossierCourant }),
+        body:    JSON.stringify({
+          name:      nom,
+          parent_id: dossierCourant,
+          // Le dossier suit le client sur lequel on travaille. Sans cela il
+          // partait sous le client technique, et n'apparaissait donc jamais
+          // dans la vue de ce client.
+          client_id: activeClient?.id ?? null,
+        }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Création impossible')
-      toast.success(`Dossier « ${nom.trim()} » créé.`)
+      toast.success(`Dossier « ${nom} » créé.`)
+      setCreation(null)
       router.refresh()
     } catch (err) { toast.error(err.message) }
   }
@@ -1086,7 +1097,7 @@ export default function ExtractionHub({
 
             <button
               type="button"
-              onClick={creerDossier}
+              onClick={() => setCreation({ nom: '' })}
               className="ml-auto inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-[#1D9E75] transition-colors cursor-pointer"
             >
               <FolderPlusIcon className="w-3.5 h-3.5" /> Nouveau dossier
@@ -1101,7 +1112,7 @@ export default function ExtractionHub({
           <div className="flex justify-end px-0.5">
             <button
               type="button"
-              onClick={creerDossier}
+              onClick={() => setCreation({ nom: '' })}
               className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-[#1D9E75] transition-colors cursor-pointer"
             >
               <FolderPlusIcon className="w-3.5 h-3.5" /> Nouveau dossier
@@ -1422,6 +1433,38 @@ export default function ExtractionHub({
       </AlertDialog>
 
       <FirstVisitHint />
+
+      {/* Créer un dossier */}
+      <AlertDialog open={!!creation} onOpenChange={v => !v && setCreation(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Nouveau dossier</AlertDialogTitle>
+            <AlertDialogDescription>
+              {chemin.length > 0
+                ? `Il sera créé dans « ${chemin[chemin.length - 1].nom} ».`
+                : 'Il sera créé à la racine.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <input
+            autoFocus
+            placeholder="Factures 2026"
+            value={creation?.nom ?? ''}
+            onChange={e => setCreation({ nom: e.target.value })}
+            onKeyDown={e => { if (e.key === 'Enter' && creation?.nom?.trim()) creerDossier(creation.nom) }}
+            className="w-full rounded-xl border border-slate-200 dark:border-white/[0.12] bg-white dark:bg-white/[0.04] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#1D9E75]/40"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!creation?.nom?.trim()}
+              onClick={() => creerDossier(creation.nom)}
+              className="bg-[#1D9E75] hover:bg-[#0F6E56]"
+            >
+              Créer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Renommer un dossier */}
       <AlertDialog open={!!renommage} onOpenChange={v => !v && setRenommage(null)}>

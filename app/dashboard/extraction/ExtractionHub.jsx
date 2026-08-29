@@ -27,6 +27,7 @@ import { FirstVisitHint } from "@/components/first-visit-hint"
 import AIErrorModal, { getAIErrorCode } from "@/components/ai-error-modal"
 import DocumentPreview from "@/components/document-preview"
 import { validateFileClientSide } from "@/lib/clientValidation"
+import { startProgress, setProgress, doneProgress } from "@/lib/progress"
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -421,13 +422,23 @@ export default function ExtractionHub({
         await uploadOne(files[i])
         doneCount++
         setUploadProgress({ current: doneCount, total: batchTotal })
+        // La barre du haut avance au rythme réel des fichiers traités. Le
+        // compteur ci-dessus est précis mais local à la zone de dépôt : la
+        // barre reste visible même après avoir fait défiler la page.
+        setProgress(doneCount / batchTotal)
       }
     }
+
+    // Démarrée ici et non à la première réponse : l'attente commence au clic,
+    // et c'est précisément le moment où l'utilisateur se demande s'il s'est
+    // passé quelque chose.
+    startProgress()
 
     const workerCount = Math.min(POOL_SIZE, files.length)
     await Promise.all(Array.from({ length: workerCount }, worker))
 
     setUploadProgress(null)
+    doneProgress()
     if (duplicates.length > 0) {
       toast.info(
         `${duplicates.length} fichier${duplicates.length > 1 ? 's étaient déjà présents' : ' était déjà présent'} ` +

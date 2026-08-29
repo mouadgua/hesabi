@@ -159,6 +159,7 @@ export default function ExtractionHub({
   const [renommage, setRenommage]   = useState(null)  // { id, nom }
   const [suppression, setSuppression] = useState(null) // { id, nom }
   const [deplacement, setDeplacement] = useState(false)
+  const [deplacerDossier, setDeplacerDossier] = useState(null) // { id, nom }
   const [isIOS, setIsIOS] = useState(false)
   const [resumeBanner, setResumeBanner] = useState(null) // { batchId, total, done }
   const [, startTransition] = useTransition()
@@ -560,6 +561,27 @@ export default function ExtractionHub({
 
   // ── Actions sur les dossiers ──────────────────────────────────────────────
 
+  /**
+   * `candidat` est-il le dossier `racine` lui-même, ou l'un de ses descendants ?
+   *
+   * Sert à retirer de la liste des destinations celles qui créeraient un cycle :
+   * déplacer un dossier dans son propre sous-dossier détacherait la branche de
+   * l'arborescence. La boucle est bornée pour la même raison qu'ailleurs — une
+   * donnée déjà incohérente ne doit pas figer le rendu.
+   */
+  function estDescendant(candidat, racine) {
+    if (candidat === racine) return true
+    const parents = new Map(dossiers.map(d => [d.id, d.parent_id ?? null]))
+    let courant = candidat
+    let garde = 0
+    while (courant && garde++ < 200) {
+      if (courant === racine) return true
+      courant = parents.get(courant) ?? null
+    }
+    return false
+  }
+
+
   async function creerDossier() {
     const nom = window.prompt('Nom du nouveau dossier')
     if (!nom?.trim()) return
@@ -567,7 +589,10 @@ export default function ExtractionHub({
       const res = await fetch('/api/folders', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ name: nom.trim(), parentId: dossierCourant }),
+        // La route lit `parent_id`, pas `parentId`. Envoyer la mauvaise clé
+        // ne produisait aucune erreur : le champ était simplement ignoré et
+        // tous les dossiers créés atterrissaient à la racine.
+        body:    JSON.stringify({ name: nom.trim(), parent_id: dossierCourant }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Création impossible')
       toast.success(`Dossier « ${nom.trim()} » créé.`)
@@ -603,6 +628,20 @@ export default function ExtractionHub({
         ? `Dossier supprimé — ${parts.join(' et ')} remonté${parts.length > 1 || d.documentsDeplaces > 1 ? 's' : ''} d'un niveau.`
         : 'Dossier supprimé.')
       setSuppression(null)
+      router.refresh()
+    } catch (err) { toast.error(err.message) }
+  }
+
+  async function deplacerLeDossier(id, cible) {
+    try {
+      const res = await fetch(`/api/folders/${id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ parent_id: cible }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Déplacement impossible')
+      toast.success('Dossier déplacé.')
+      setDeplacerDossier(null)
       router.refresh()
     } catch (err) { toast.error(err.message) }
   }
@@ -1210,6 +1249,14 @@ export default function ExtractionHub({
                     <PencilIcon className="w-3.5 h-3.5" />
                   </span>
                   <span
+                    role="button" tabIndex={0} title="Déplacer le dossier"
+                    onClick={e => { e.stopPropagation(); setDeplacerDossier({ id: d.id, nom: d.nom }) }}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); setDeplacerDossier({ id: d.id, nom: d.nom }) } }}
+                    className="p-1 rounded text-slate-400 hover:text-[#1D9E75] hover:bg-[#E1F5EE] dark:hover:bg-[#1D9E75]/10 cursor-pointer shrink-0"
+                  >
+                    <FolderInputIcon className="w-3.5 h-3.5" />
+                  </span>
+                  <span
                     role="button" tabIndex={0} title="Supprimer le dossier"
                     onClick={e => { e.stopPropagation(); setSuppression({ id: d.id, nom: d.nom }) }}
                     onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); setSuppression({ id: d.id, nom: d.nom }) } }}
@@ -1421,6 +1468,44 @@ export default function ExtractionHub({
             >
               Supprimer le dossier
             </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Déplacer un dossier. Les destinations invalides sont retirées de la
+          liste plutôt que refusées après coup : le dossier lui-même, et ses
+          descendants — l'y déplacer créerait un cycle et ferait disparaître la
+          branche. Le serveur refait le contrôle, l'affichage n'en est que le
+          reflet. */}
+      <AlertDialog open={!!deplacerDossier} onOpenChange={v => !v && setDeplacerDossier(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Déplacer « {deplacerDossier?.nom} »</AlertDialogTitle>
+            <AlertDialogDescription>
+              Son contenu le suit. Choisissez le dossier qui le contiendra.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-64 overflow-y-auto space-y-1 -mx-1 px-1">
+            <button
+              type="button" onClick={() => deplacerLeDossier(deplacerDossier.id, null)}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left hover:bg-slate-50 dark:hover:bg-white/[0.04] cursor-pointer"
+            >
+              <FolderIcon className="w-4 h-4 text-slate-400" /> Racine (aucun parent)
+            </button>
+            {deplacerDossier && dossiers
+              .filter(d => !estDescendant(d.id, deplacerDossier.id))
+              .map(d => (
+                <button
+                  key={d.id} type="button"
+                  onClick={() => deplacerLeDossier(deplacerDossier.id, d.id)}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left hover:bg-slate-50 dark:hover:bg-white/[0.04] cursor-pointer"
+                >
+                  <FolderIcon className="w-4 h-4 text-amber-400" /> {d.nom}
+                </button>
+              ))}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

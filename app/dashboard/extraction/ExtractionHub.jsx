@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
 import { createBrowserSupabase } from "@/utils/supabase/client"
-import { extractDocumentsAction, deleteDocumentsAction } from "@/app/dashboard/actions"
+import { extractDocumentsAction, deleteDocumentsAction, moveDocumentsAction } from "@/app/dashboard/actions"
 import { Button } from "@/components/ui/button"
 import {
   Select, SelectContent, SelectGroup, SelectItem,
@@ -20,6 +20,7 @@ import {
   Trash2Icon, ChevronRightIcon, AlertCircleIcon,
   CheckCircle2Icon, ClockIcon, FolderIcon, AlertTriangleIcon,
   CreditCardIcon, WifiOffIcon, ShieldAlertIcon, UsersIcon, XIcon, EyeIcon,
+  FolderPlusIcon, PencilIcon, FolderInputIcon,
   SearchIcon, FilterXIcon,
 } from "lucide-react"
 import { FirstVisitHint } from "@/components/first-visit-hint"
@@ -155,6 +156,9 @@ export default function ExtractionHub({
   // null = racine. On garde l'identifiant plutôt que le chemin : un dossier
   // renommé ou déplacé ne casse pas la position courante.
   const [dossierCourant, setDossierCourant] = useState(null)
+  const [renommage, setRenommage]   = useState(null)  // { id, nom }
+  const [suppression, setSuppression] = useState(null) // { id, nom }
+  const [deplacement, setDeplacement] = useState(false)
   const [isIOS, setIsIOS] = useState(false)
   const [resumeBanner, setResumeBanner] = useState(null) // { batchId, total, done }
   const [, startTransition] = useTransition()
@@ -552,6 +556,70 @@ export default function ExtractionHub({
     e.preventDefault(); dragCounter.current = 0; setIsDragging(false)
     if (credits <= 0) { toast.error("Crédits épuisés. Rechargez votre compte pour uploader."); return }
     handleFiles([...e.dataTransfer.files])
+  }
+
+  // ── Actions sur les dossiers ──────────────────────────────────────────────
+
+  async function creerDossier() {
+    const nom = window.prompt('Nom du nouveau dossier')
+    if (!nom?.trim()) return
+    try {
+      const res = await fetch('/api/folders', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ name: nom.trim(), parentId: dossierCourant }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Création impossible')
+      toast.success(`Dossier « ${nom.trim()} » créé.`)
+      router.refresh()
+    } catch (err) { toast.error(err.message) }
+  }
+
+  async function renommerDossier(id, nom) {
+    try {
+      const res = await fetch(`/api/folders/${id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ nom }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? 'Renommage impossible')
+      toast.success('Dossier renommé.')
+      setRenommage(null)
+      router.refresh()
+    } catch (err) { toast.error(err.message) }
+  }
+
+  async function supprimerDossier(id) {
+    try {
+      const res = await fetch(`/api/folders/${id}`, { method: 'DELETE' })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error ?? 'Suppression impossible')
+      // Le contenu remonte plutôt que de disparaître : on le dit, sinon
+      // l'utilisateur croit avoir perdu ce que contenait le dossier.
+      const parts = []
+      if (d.documentsDeplaces > 0) parts.push(`${d.documentsDeplaces} document${d.documentsDeplaces > 1 ? 's' : ''}`)
+      if (d.dossiersDeplaces  > 0) parts.push(`${d.dossiersDeplaces} sous-dossier${d.dossiersDeplaces > 1 ? 's' : ''}`)
+      toast.success(parts.length
+        ? `Dossier supprimé — ${parts.join(' et ')} remonté${parts.length > 1 || d.documentsDeplaces > 1 ? 's' : ''} d'un niveau.`
+        : 'Dossier supprimé.')
+      setSuppression(null)
+      router.refresh()
+    } catch (err) { toast.error(err.message) }
+  }
+
+  async function deplacerDocuments(cible) {
+    const ids = [...selectedDocIds]
+    if (ids.length === 0) return
+    const fd = new FormData()
+    fd.append('dossier_id', cible ?? 'RACINE')
+    ids.forEach(id => fd.append('documentIds', id))
+    try {
+      const { moved } = await moveDocumentsAction(fd)
+      toast.success(`${moved} document${moved > 1 ? 's déplacés' : ' déplacé'}.`)
+      setSelectedDocIds(new Set())
+      setDeplacement(false)
+      router.refresh()
+    } catch (err) { toast.error(err.message ?? 'Déplacement impossible') }
   }
 
   // ── Filtered docs (search + status + type) ───────────────────────────────
@@ -976,7 +1044,30 @@ export default function ExtractionHub({
                 )}
               </span>
             ))}
+
+            <button
+              type="button"
+              onClick={creerDossier}
+              className="ml-auto inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-[#1D9E75] transition-colors cursor-pointer"
+            >
+              <FolderPlusIcon className="w-3.5 h-3.5" /> Nouveau dossier
+            </button>
           </nav>
+        )}
+
+        {/* À la racine le fil d'Ariane est masqué : le bouton de création doit
+            malgré tout rester atteignable, sinon on ne peut créer un dossier
+            qu'une fois déjà entré dans un autre. */}
+        {!enRecherche && chemin.length === 0 && (
+          <div className="flex justify-end px-0.5">
+            <button
+              type="button"
+              onClick={creerDossier}
+              className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-[#1D9E75] transition-colors cursor-pointer"
+            >
+              <FolderPlusIcon className="w-3.5 h-3.5" /> Nouveau dossier
+            </button>
+          </div>
         )}
 
         {/* ── Action bar ── */}
@@ -1041,6 +1132,15 @@ export default function ExtractionHub({
               </Select>
 
               <Button
+                variant="outline"
+                onClick={() => setDeplacement(true)}
+                disabled={selectedDocIds.size === 0}
+                className="h-8 text-xs gap-1.5 px-3 disabled:opacity-40"
+              >
+                <FolderInputIcon className="w-3.5 h-3.5" /> Déplacer
+              </Button>
+
+              <Button
                 onClick={handleExtract}
                 disabled={selectedDocIds.size === 0}
                 className="h-8 text-xs gap-1.5 px-4 disabled:opacity-40"
@@ -1098,6 +1198,26 @@ export default function ExtractionHub({
                   <span className="text-[11px] text-slate-400 tabular-nums shrink-0">
                     {nbDocs} document{nbDocs > 1 ? 's' : ''}
                   </span>
+
+                  {/* Rendus comme des <span> : cette ligne est déjà un bouton,
+                      et un bouton imbriqué dans un bouton est invalide. */}
+                  <span
+                    role="button" tabIndex={0} title="Renommer"
+                    onClick={e => { e.stopPropagation(); setRenommage({ id: d.id, nom: d.nom }) }}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); setRenommage({ id: d.id, nom: d.nom }) } }}
+                    className="p-1 rounded text-slate-400 hover:text-[#1D9E75] hover:bg-[#E1F5EE] dark:hover:bg-[#1D9E75]/10 cursor-pointer shrink-0"
+                  >
+                    <PencilIcon className="w-3.5 h-3.5" />
+                  </span>
+                  <span
+                    role="button" tabIndex={0} title="Supprimer le dossier"
+                    onClick={e => { e.stopPropagation(); setSuppression({ id: d.id, nom: d.nom }) }}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.stopPropagation(); setSuppression({ id: d.id, nom: d.nom }) } }}
+                    className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 cursor-pointer shrink-0"
+                  >
+                    <Trash2Icon className="w-3.5 h-3.5" />
+                  </span>
+
                   <ChevronRightIcon className="w-4 h-4 text-slate-300 dark:text-slate-600 shrink-0" />
                 </button>
               )
@@ -1255,6 +1375,86 @@ export default function ExtractionHub({
       </AlertDialog>
 
       <FirstVisitHint />
+
+      {/* Renommer un dossier */}
+      <AlertDialog open={!!renommage} onOpenChange={v => !v && setRenommage(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Renommer le dossier</AlertDialogTitle>
+            <AlertDialogDescription>Son contenu n&apos;est pas modifié.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <input
+            autoFocus
+            value={renommage?.nom ?? ''}
+            onChange={e => setRenommage(r => ({ ...r, nom: e.target.value }))}
+            onKeyDown={e => { if (e.key === 'Enter' && renommage?.nom?.trim()) renommerDossier(renommage.id, renommage.nom.trim()) }}
+            className="w-full rounded-xl border border-slate-200 dark:border-white/[0.12] bg-white dark:bg-white/[0.04] px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-[#1D9E75]/40"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!renommage?.nom?.trim()}
+              onClick={() => renommerDossier(renommage.id, renommage.nom.trim())}
+              className="bg-[#1D9E75] hover:bg-[#0F6E56]"
+            >
+              Renommer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Supprimer un dossier — en disant ce qu'il advient du contenu */}
+      <AlertDialog open={!!suppression} onOpenChange={v => !v && setSuppression(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supprimer « {suppression?.nom} » ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Rien n&apos;est perdu : les documents et sous-dossiers qu&apos;il contient
+              remontent d&apos;un niveau. Seul le dossier disparaît.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => supprimerDossier(suppression.id)}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              Supprimer le dossier
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Déplacer les documents sélectionnés */}
+      <AlertDialog open={deplacement} onOpenChange={v => !v && setDeplacement(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Déplacer {selectedDocIds.size} document{selectedDocIds.size > 1 ? 's' : ''}
+            </AlertDialogTitle>
+            <AlertDialogDescription>Choisissez la destination.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-64 overflow-y-auto space-y-1 -mx-1 px-1">
+            <button
+              type="button" onClick={() => deplacerDocuments(null)}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left hover:bg-slate-50 dark:hover:bg-white/[0.04] cursor-pointer"
+            >
+              <FolderIcon className="w-4 h-4 text-slate-400" /> Racine (aucun dossier)
+            </button>
+            {dossiers.map(d => (
+              <button
+                key={d.id} type="button" onClick={() => deplacerDocuments(d.id)}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left hover:bg-slate-50 dark:hover:bg-white/[0.04] cursor-pointer"
+              >
+                <FolderIcon className="w-4 h-4 text-amber-400" /> {d.nom}
+              </button>
+            ))}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <DocumentPreview
         doc={previewDoc}

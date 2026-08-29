@@ -21,6 +21,53 @@ import { getAppUrl } from '@/lib/env'
 // ============================================================================
 // 1. SUPPRESSION DE DOCUMENTS
 // ============================================================================
+/**
+ * Déplace des documents vers un dossier, ou vers la racine.
+ *
+ * Les deux extrémités sont vérifiées contre le cabinet de la session : les
+ * documents par la relation client, le dossier de destination de même. Un
+ * identifiant deviné ne permet donc ni de déplacer le document d'autrui, ni
+ * d'y déposer les siens.
+ *
+ * L'écriture est un updateMany scopé et non une boucle d'update par
+ * identifiant : la condition de cabinet fait partie de la requête, et le
+ * compte renvoyé dit combien de documents ont réellement bougé — un écart
+ * signalerait une tentative sur des documents qui ne sont pas les siens.
+ */
+export async function moveDocumentsAction(formData) {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) throw new Error("Non autorisé")
+
+    const utilisateur = await prisma.utilisateur.findUnique({
+        where: { id: user.id },
+        select: { cabinet_id: true },
+    })
+    if (!utilisateur?.cabinet_id) throw new Error("Aucun cabinet associé")
+
+    const documentIds = formData.getAll('documentIds').filter(Boolean)
+    if (documentIds.length === 0) throw new Error("Aucun document sélectionné")
+
+    const rawDossier = formData.get('dossier_id')
+    const dossierId  = rawDossier && rawDossier !== 'RACINE' ? rawDossier : null
+
+    if (dossierId) {
+        const cible = await prisma.dossier.findFirst({
+            where:  { id: dossierId, client: { cabinet_id: utilisateur.cabinet_id } },
+            select: { id: true },
+        })
+        if (!cible) throw new Error("Dossier de destination introuvable")
+    }
+
+    const { count } = await prisma.document.updateMany({
+        where: { id: { in: documentIds }, client: { cabinet_id: utilisateur.cabinet_id } },
+        data:  { dossier_id: dossierId },
+    })
+
+    revalidatePath('/dashboard/extraction')
+    return { moved: count }
+}
+
 export async function deleteDocumentsAction(formData) {
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()

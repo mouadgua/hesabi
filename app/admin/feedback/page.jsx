@@ -1,9 +1,9 @@
 import prisma from '@/lib/prisma'
-import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { MessageSquarePlusIcon, TrendingUpIcon } from "lucide-react"
+import { requireAdmin } from '@/lib/admin-auth'
 
 const DOC_TYPE_LABELS = {
   facture: "Facture",
@@ -14,16 +14,16 @@ const DOC_TYPE_LABELS = {
 }
 
 export default async function AdminFeedbackPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-
-  const utilisateur = await prisma.utilisateur.findUnique({
-    where: { id: user.id },
-    select: { role: true },
-  })
-
-  if (!utilisateur || utilisateur.role !== 'EXPERT_COMPTABLE') {
+  // Cette page contrôlait `role !== 'EXPERT_COMPTABLE'`. C'est le rôle par
+  // défaut de TOUS les utilisateurs : la condition n'écartait donc personne.
+  // La page restait protégée par le layout admin, mais quiconque lisait ce
+  // fichier pouvait croire qu'elle se gardait elle-même — et reproduire le
+  // motif sur une page qui, elle, n'aurait pas de layout pour la couvrir.
+  //
+  // requireAdmin() est la garde réelle, partagée avec les routes et actions.
+  try {
+    await requireAdmin()
+  } catch {
     redirect('/dashboard')
   }
 

@@ -5,10 +5,13 @@
      grande partie du CSS moderne et des balises de mise en page récentes.
      C'est laid à lire, mais c'est ce qui s'affiche correctement partout.
 
-     Le logo est une image PNG servie en HTTPS depuis le site : les clients de
-     messagerie ne rendent pas le SVG, et beaucoup bloquent les images par
-     défaut — d'où le mot « Hesabi » en texte juste à côté, qui reste lisible
-     même image désactivée. -->
+     Le logo est un PNG servi en HTTPS : les clients de messagerie ne rendent
+     pas le SVG. Il est recadré et réduit à 440×136 px / 23 Ko — le fichier
+     d'origine faisait 2000×2000 et 292 Ko, ce qui aurait fait tronquer le
+     message par Gmail (limite autour de 100 Ko) et ralenti chaque ouverture.
+
+     L'attribut alt porte « Hesabi » : beaucoup de clients bloquent les images
+     par défaut, et c'est alors le seul élément d'identification visible. -->
 <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5fbf7;padding:32px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
   <tr>
     <td align="center">
@@ -22,8 +25,10 @@
         <!-- En-tête -->
         <tr>
           <td style="padding:28px 32px 0 32px;">
-            <span style="font-size:20px;font-weight:700;color:#0f172a;letter-spacing:-0.3px;">Hesabi</span>
-            <div style="font-size:12px;color:#64748b;margin-top:2px;">L'IA de votre cabinet comptable</div>
+            <img src="https://hesabi.ma/hesabi-email-logo.png"
+                 alt="Hesabi" width="140" height="43"
+                 style="display:block;border:0;outline:none;text-decoration:none;" />
+            <div style="font-size:12px;color:#64748b;margin-top:8px;">L'IA de votre cabinet comptable</div>
           </td>
         </tr>
 

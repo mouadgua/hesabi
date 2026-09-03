@@ -26,6 +26,17 @@ localhost. Tant qu'il n'est pas changé, le problème peut réapparaître.
 | **Site URL** | `https://hesabi.ma` |
 | **Redirect URLs** | `https://hesabi.ma/**` |
 
+⚠️ **`https`, pas `http`.** Un Site URL en `http://` produit un lien que le
+navigateur refuse ou dégrade sur un site servi en HTTPS, et l'en-tête HSTS du
+site le bloque de toute façon. Le `s` manquant suffit à casser toute la
+récupération de mot de passe.
+
+⚠️ La liste des *Redirect URLs* ne contient aujourd'hui que
+`http://localhost:3000/auth/callback`. Tant que `https://hesabi.ma/**` n'y
+figure pas, Supabase **rejette** le lien envoyé par l'application et retombe
+sur le Site URL — c'est exactement le mécanisme qui a produit le lien vers
+localhost.
+
 Ajoute aussi `http://localhost:3000/**` dans les *Redirect URLs* si tu veux que
 la réinitialisation continue de fonctionner en développement. Le *Site URL*,
 lui, doit rester le domaine de production : c'est le repli utilisé quand tout
@@ -79,21 +90,29 @@ tableau de bord Resend.
 
 ## 3. Le logo
 
-Le gabarit affiche « Hesabi » en texte plutôt qu'une image, et c'est délibéré :
-les clients de messagerie ne rendent pas le SVG — seul format disponible dans
-`public/` — et beaucoup bloquent les images par défaut. Un logotype en texte
-s'affiche partout, y compris images désactivées.
+Le gabarit utilise `public/hesabi-email-logo.png`, dérivé de ton `logo-text.png`.
 
-Pour utiliser la vraie marque, il faut un **PNG servi en HTTPS**. Une fois
-`public/hesabi-logo.png` ajouté, remplace le bloc `<span>Hesabi</span>` par :
+Le fichier d'origine fait 2000×2000 pour 292 Ko, presque entièrement composé de
+marge blanche. Dans un email c'est doublement gênant : **Gmail tronque les
+messages au-delà d'environ 100 Ko**, et l'image est retéléchargée à chaque
+ouverture. La version pour email est recadrée sur la bande utile et réduite à
+**440×136 px pour 23 Ko** — affichée à 140 px, donc nette sur écran à haute
+densité.
 
-```html
-<img src="https://hesabi.ma/hesabi-logo.png" alt="Hesabi" width="120"
-     style="display:block;border:0;" />
+Deux détails qui comptent dans le gabarit :
+
+- `width` et `height` sont explicites. Sans eux, Outlook affiche l'image à sa
+  taille réelle et fait exploser la mise en page ;
+- l'attribut `alt` porte « Hesabi ». Beaucoup de clients bloquent les images par
+  défaut : c'est alors le seul élément d'identification visible.
+
+Si tu modifies le logo, régénère la version email plutôt que de pointer sur
+l'original :
+
+```bash
+sips -c 620 2000 public/logo-text.png --out /tmp/crop.png
+sips -Z 440 /tmp/crop.png --out public/hesabi-email-logo.png
 ```
-
-Garde une largeur explicite : sans elle, Outlook affiche l'image à sa taille
-d'origine.
 
 ---
 

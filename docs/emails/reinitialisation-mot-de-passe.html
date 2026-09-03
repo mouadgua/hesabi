@@ -1,0 +1,86 @@
+<!-- Gabarit « Reset Password » — à coller dans Supabase :
+     Authentication › Emails › Reset Password › Message body
+
+     Tableaux et styles en ligne à dessein : Outlook et Gmail ignorent une
+     grande partie du CSS moderne et des balises de mise en page récentes.
+     C'est laid à lire, mais c'est ce qui s'affiche correctement partout.
+
+     Le logo est une image PNG servie en HTTPS depuis le site : les clients de
+     messagerie ne rendent pas le SVG, et beaucoup bloquent les images par
+     défaut — d'où le mot « Hesabi » en texte juste à côté, qui reste lisible
+     même image désactivée. -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5fbf7;padding:32px 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <tr>
+    <td align="center">
+      <table width="480" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+
+        <!-- Bandeau -->
+        <tr>
+          <td style="background:#1D9E75;height:4px;line-height:4px;font-size:0;">&nbsp;</td>
+        </tr>
+
+        <!-- En-tête -->
+        <tr>
+          <td style="padding:28px 32px 0 32px;">
+            <span style="font-size:20px;font-weight:700;color:#0f172a;letter-spacing:-0.3px;">Hesabi</span>
+            <div style="font-size:12px;color:#64748b;margin-top:2px;">L'IA de votre cabinet comptable</div>
+          </td>
+        </tr>
+
+        <!-- Corps -->
+        <tr>
+          <td style="padding:24px 32px 8px 32px;">
+            <h1 style="margin:0 0 12px 0;font-size:18px;font-weight:700;color:#0f172a;">
+              Réinitialiser votre mot de passe
+            </h1>
+            <p style="margin:0 0 20px 0;font-size:14px;line-height:22px;color:#475569;">
+              Vous avez demandé à réinitialiser le mot de passe de votre espace Hesabi.
+              Cliquez sur le bouton ci-dessous pour en choisir un nouveau.
+            </p>
+          </td>
+        </tr>
+
+        <!-- Bouton -->
+        <tr>
+          <td align="center" style="padding:0 32px 24px 32px;">
+            <a href="{{ .ConfirmationURL }}"
+               style="display:inline-block;background:#1D9E75;color:#ffffff;text-decoration:none;
+                      font-size:14px;font-weight:600;padding:13px 28px;border-radius:12px;">
+              Choisir un nouveau mot de passe
+            </a>
+          </td>
+        </tr>
+
+        <!-- Repli : certains clients n'affichent pas les boutons -->
+        <tr>
+          <td style="padding:0 32px 24px 32px;">
+            <p style="margin:0 0 6px 0;font-size:12px;color:#94a3b8;">
+              Le bouton ne fonctionne pas ? Copiez ce lien dans votre navigateur :
+            </p>
+            <p style="margin:0;font-size:12px;word-break:break-all;">
+              <a href="{{ .ConfirmationURL }}" style="color:#1D9E75;">{{ .ConfirmationURL }}</a>
+            </p>
+          </td>
+        </tr>
+
+        <!-- Pied -->
+        <tr>
+          <td style="padding:18px 32px 26px 32px;border-top:1px solid #f1f5f9;">
+            <p style="margin:0 0 8px 0;font-size:12px;line-height:19px;color:#64748b;">
+              Ce lien expire dans une heure et ne peut servir qu'une fois.
+            </p>
+            <p style="margin:0;font-size:12px;line-height:19px;color:#94a3b8;">
+              Vous n'êtes pas à l'origine de cette demande ? Ignorez cet email :
+              votre mot de passe reste inchangé.
+            </p>
+          </td>
+        </tr>
+
+      </table>
+
+      <p style="margin:16px 0 0 0;font-size:11px;color:#94a3b8;">
+        Hesabi · <a href="https://hesabi.ma" style="color:#94a3b8;">hesabi.ma</a>
+      </p>
+    </td>
+  </tr>
+</table>

@@ -30,7 +30,9 @@ export function ProfileForm({ fullName, email, avatarUrl, initiale }) {
         <div className="flex items-center gap-6">
           <Avatar className="h-20 w-20 border border-gray-100 shadow-sm">
             <AvatarImage src={avatarUrl} />
-            <AvatarFallback className="bg-blue-50 text-blue-600 text-2xl font-medium">{initiale}</AvatarFallback>
+            {/* Bleu à l'origine, sans rapport avec la charte verte du reste
+                de l'application. */}
+            <AvatarFallback className="bg-[#E1F5EE] text-[#0F6E56] text-2xl font-medium">{initiale}</AvatarFallback>
           </Avatar>
           <div>
             <Button variant="outline" size="sm" className="mb-2" type="button" disabled>Changer l'avatar</Button>
@@ -65,7 +67,7 @@ export function ProfileForm({ fullName, email, avatarUrl, initiale }) {
       <CardFooter className="bg-gray-50/50 border-t border-gray-100 px-6 py-4 flex justify-end">
         <Button
           type="submit"
-          className="bg-blue-600 hover:bg-blue-700 text-white"
+          className="bg-[#1D9E75] hover:bg-[#0F6E56] text-white"
           disabled={isPending}
         >
           {isPending && <Loader2Icon className="mr-2 h-4 w-4 animate-spin" />}

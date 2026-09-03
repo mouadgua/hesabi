@@ -6,6 +6,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { ProfileForm } from "./ProfileForm"
+import { PasswordForm } from "./PasswordForm"
 
 export default async function ProfileSettingsPage() {
   const supabase = await createClient()
@@ -36,6 +37,20 @@ export default async function ProfileSettingsPage() {
           avatarUrl={user?.user_metadata?.avatar_url}
           initiale={initiale}
         />
+      </Card>
+
+      {/* Sécurité — cette section n'existait pas. Changer son mot de passe
+          imposait de se déconnecter et de passer par « mot de passe oublié »,
+          donc d'attendre un email, sur un chemin dont on vient de découvrir
+          qu'il était cassé. */}
+      <Card className="border-slate-200 dark:border-white/[0.07] shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-lg">Sécurité</CardTitle>
+          <CardDescription>
+            Changez votre mot de passe. Votre mot de passe actuel vous sera demandé.
+          </CardDescription>
+        </CardHeader>
+        <PasswordForm />
       </Card>
     </div>
   )
